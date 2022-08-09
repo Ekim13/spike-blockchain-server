@@ -34,6 +34,8 @@ func NewNftListManager() *NftListManager {
 }
 
 func (m *NftListManager) QueryNftList(uuid uuid.UUID, walletAddr, network string) {
+	m.listLk.Lock()
+	defer m.listLk.Unlock()
 	m.nlq.Push(&NftListReq{
 		uuid:       uuid,
 		walletAddr: walletAddr,
@@ -56,16 +58,19 @@ func (m *NftListManager) RunSched() {
 }
 
 func (m *NftListManager) handle() {
+	m.listLk.Lock()
+	defer m.listLk.Unlock()
+
 	queueLen := m.nlq.Len()
 	for i := 0; i < queueLen; i++ {
 		if !m.counter.Allow() {
 			continue
 		}
-		go func(sqi int) {
-			task := (*m.nlq)[sqi]
-			m.nlq.Remove(sqi)
+		t := (*m.nlq)[i]
+		m.nlq.Remove(i)
+		go func(task *NftListReq) {
 			m.queryNftListByMoralis(task.uuid, task.walletAddr, task.network)
-		}(i)
+		}(t)
 	}
 }
 
@@ -125,6 +130,8 @@ func NewNativeTxManager() *NativeTxManager {
 }
 
 func (m *NativeTxManager) QueryNativeTxRecord(uuid uuid.UUID, walletAddr string, blockNum uint64) {
+	m.listLk.Lock()
+	defer m.listLk.Unlock()
 	m.ntq.Push(&NativeTxReq{
 		uuid:       uuid,
 		walletAddr: walletAddr,
@@ -147,16 +154,18 @@ func (m *NativeTxManager) RunSched() {
 }
 
 func (m *NativeTxManager) handle() {
+	m.listLk.Lock()
+	defer m.listLk.Unlock()
 	queueLen := m.ntq.Len()
 	for i := 0; i < queueLen; i++ {
 		if !m.counter.Allow() {
 			continue
 		}
-		go func(sqi int) {
-			task := (*m.ntq)[sqi]
-			m.ntq.Remove(sqi)
+		t := (*m.ntq)[i]
+		m.ntq.Remove(i)
+		go func(task *NativeTxReq) {
 			m.queryNativeTxRecordByBscScan(task.uuid, task.walletAddr, task.blockNum)
-		}(i)
+		}(t)
 	}
 }
 
@@ -214,6 +223,8 @@ func NewERC20TxManager() *ERC20TxManager {
 }
 
 func (m *ERC20TxManager) QueryERC20TxRecord(uuid uuid.UUID, contractAddr, walletAddr string, blockNum uint64) {
+	m.listLk.Lock()
+	defer m.listLk.Unlock()
 	m.etq.Push(&ERC20TxReq{
 		uuid:         uuid,
 		walletAddr:   walletAddr,
@@ -237,16 +248,18 @@ func (m *ERC20TxManager) RunSched() {
 }
 
 func (m *ERC20TxManager) handle() {
+	m.listLk.Lock()
+	defer m.listLk.Unlock()
 	queueLen := m.etq.Len()
 	for i := 0; i < queueLen; i++ {
 		if !m.counter.Allow() {
 			continue
 		}
-		go func(sqi int) {
-			task := (*m.etq)[sqi]
-			m.etq.Remove(sqi)
+		t := (*m.etq)[i]
+		m.etq.Remove(i)
+		go func(task *ERC20TxReq) {
 			m.queryErc20TxRecordByBscScan(task.uuid, task.contractAddr, task.walletAddr, task.blockNum)
-		}(i)
+		}(t)
 	}
 }
 
