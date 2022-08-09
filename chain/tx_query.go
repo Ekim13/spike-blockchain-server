@@ -431,42 +431,54 @@ func (bl *BscListener) convertNftResult(res []NftResult) []NftResult {
 		log.Error("new auNft err : ", err)
 		return res
 	}
-	for k, v := range res {
-		if v.TokenUri == "" || v.Metadata == "" {
-			tokenId, err := strconv.Atoi(v.TokenId)
-			if err != nil {
-				log.Errorf("string %s convert int err : %v", v.TokenId, err)
-				continue
+	throttle := make(chan struct{}, 20)
+	var wg sync.WaitGroup
+	for i, nftResult := range res {
+		wg.Add(1)
+		throttle <- struct{}{}
+		go func(k int, v NftResult) {
+			defer func() {
+				wg.Done()
+				<-throttle
+			}()
+
+			if v.TokenUri == "" || v.Metadata == "" {
+				tokenId, err := strconv.Atoi(v.TokenId)
+				if err != nil {
+					log.Errorf("string %s convert int err : %v", v.TokenId, err)
+					return
+				}
+				uri, err := aunft.TokenURI(nil, big.NewInt(int64(tokenId)))
+				if err != nil {
+					log.Errorf("query tokenUri tokenId : %d, err : %+v", tokenId, err)
+					return
+				}
+				client := resty.New()
+				t3 := time.Now()
+				resp, err := client.R().Get(uri)
+				if err != nil {
+					log.Errorf("req err : uri :%s", uri)
+					return
+				}
+				log.Info("query metadata took :", time.Since(t3))
+				log.Infof("query nft tokenId : %d, uri : %s", tokenId, uri)
+				var m Metadata
+				err = json.Unmarshal(resp.Body(), &m)
+				if err != nil {
+					log.Errorf("json unmarshal err : %+v, resp : %s", err, string(resp.Body()))
+					return
+				}
+				metadata, err := json.Marshal(m)
+				if err != nil {
+					log.Errorf("json marshal err : %+v, meatadata : %+v", err, m)
+					return
+				}
+				res[k].TokenUri = uri
+				res[k].Metadata = string(metadata)
 			}
-			uri, err := aunft.TokenURI(nil, big.NewInt(int64(tokenId)))
-			if err != nil {
-				log.Errorf("query tokenUri tokenId : %d, err : %+v", tokenId, err)
-				continue
-			}
-			client := resty.New()
-			t3 := time.Now()
-			resp, err := client.R().Get(uri)
-			if err != nil {
-				log.Errorf("req err : uri :%s", uri)
-				continue
-			}
-			log.Info("query metadata took :", time.Since(t3))
-			log.Infof("query nft tokenId : %d, uri : %s", tokenId, uri)
-			var m Metadata
-			err = json.Unmarshal(resp.Body(), &m)
-			if err != nil {
-				log.Errorf("json unmarshal err : %+v, resp : %s", err, string(resp.Body()))
-				continue
-			}
-			metadata, err := json.Marshal(m)
-			if err != nil {
-				log.Errorf("json marshal err : %+v, meatadata : %+v", err, m)
-				continue
-			}
-			res[k].TokenUri = uri
-			res[k].Metadata = string(metadata)
-		}
+		}(i, nftResult)
 	}
+	wg.Wait()
 	return res
 }
 

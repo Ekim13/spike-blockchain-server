@@ -13,7 +13,7 @@ func NewRouter(chainApi *chain.BscListener) *gin.Engine {
 
 	// to use
 	//r.Use(middleware.EthSignatureVerify())
-	//r.Use(middleware.ApiKeyAuth())
+	r.Use(middleware.ApiKeyAuth())
 	//r.Use(middleware.LoggerToFile())
 	r.Use(middleware.Cors())
 

@@ -25,6 +25,9 @@ func Redis() error {
 		log.Error("redis init err : ", err)
 		return err
 	}
+	client.SAdd("api_key", "VV6I9K4T1XB9HEZ187XJI51AR2FT8CJ8VV", 0)
+	client.SAdd("api_key", "CB3C47F716DC464EF5FB93941FBC8BBD95", 0)
+	client.SAdd("api_key", "1ADD650C83877E54E21EB00BF983B85AF9", 0)
 
 	RedisClient = client
 	return nil

@@ -115,7 +115,7 @@ func (bl *BNBListener) PastBlockFilter(blockNum, nowBlockNum uint64) error {
 func (bl *BNBListener) SingleBlockFilter(block *types.Block) error {
 	log.Infof("bnb height : %d , tx num :  %d", block.Number(), len(block.Transactions()))
 	for _, tx := range block.Transactions() {
-		log.Infof("bnb tx : %s", tx.Hash())
+		//log.Infof("bnb tx : %s", tx.Hash())
 		var fromAddr string
 		if msg, err := tx.AsMessage(types.NewEIP155Signer(bl.chainId), nil); err == nil {
 			fromAddr = msg.From().Hex()

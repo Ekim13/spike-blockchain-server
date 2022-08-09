@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"spike-blockchain-server/constants"
 	"spike-blockchain-server/serializer"
+	"strings"
 )
 
 type NativeTransactionRecordService struct {
@@ -187,7 +188,7 @@ func (bl *BscListener) FindNativeTransactionRecord(address string) (BscRes, erro
 			bnbRecord = append(bnbRecord, bscRes.Result[i])
 			continue
 		}
-		if bscRes.Result[i].From == constants.GAME_VAULT_ADDRESS {
+		if strings.ToLower(bscRes.Result[i].From) == strings.ToLower(constants.GAME_VAULT_ADDRESS) {
 			bnbRecord = append(bnbRecord, bscRes.Result[i])
 			continue
 		}
