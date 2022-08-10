@@ -80,15 +80,13 @@ func (m *NftListManager) WaitCall(uuid uuid.UUID) (interface{}, error) {
 		defer m.workLk.Unlock()
 		delete(m.callRes, uuid)
 	}()
-
+	m.workLk.Lock()
 	ch, ok := m.callRes[uuid]
 	if !ok {
 		ch = make(chan result, 1)
-		m.workLk.Lock()
 		m.callRes[uuid] = ch
-		m.workLk.Unlock()
 	}
-
+	m.workLk.Unlock()
 	select {
 	case res := <-ch:
 		return res.r, res.err
@@ -97,13 +95,12 @@ func (m *NftListManager) WaitCall(uuid uuid.UUID) (interface{}, error) {
 
 func (m *NftListManager) queryNftListByMoralis(uuid uuid.UUID, walletAddr, network string) {
 	var res []NftResult
-	res = QueryWalletNft("", walletAddr, network, res)
-	log.Info("---", len(res))
+	res, err := QueryWalletNft("", walletAddr, network, res)
 	m.workLk.Lock()
 	defer m.workLk.Unlock()
 	m.callRes[uuid] <- result{
 		r:   res,
-		err: nil,
+		err: err,
 	}
 }
 
@@ -175,15 +172,13 @@ func (m *NativeTxManager) WaitCall(uuid uuid.UUID) (interface{}, error) {
 		defer m.workLk.Unlock()
 		delete(m.callRes, uuid)
 	}()
-
+	m.workLk.Lock()
 	ch, ok := m.callRes[uuid]
 	if !ok {
 		ch = make(chan result, 1)
-		m.workLk.Lock()
 		m.callRes[uuid] = ch
-		m.workLk.Unlock()
 	}
-
+	m.workLk.Unlock()
 	select {
 	case res := <-ch:
 		return res.r, res.err
@@ -269,14 +264,13 @@ func (m *ERC20TxManager) WaitCall(uuid uuid.UUID) (interface{}, error) {
 		defer m.workLk.Unlock()
 		delete(m.callRes, uuid)
 	}()
-
+	m.workLk.Lock()
 	ch, ok := m.callRes[uuid]
 	if !ok {
 		ch = make(chan result, 1)
-		m.workLk.Lock()
 		m.callRes[uuid] = ch
-		m.workLk.Unlock()
 	}
+	m.workLk.Unlock()
 
 	select {
 	case res := <-ch:

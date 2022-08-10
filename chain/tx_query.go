@@ -25,6 +25,7 @@ import (
 )
 
 var ErrorParam = errors.New("params error")
+var MoralisRateLimit = "{\"message\":\"Rate limit exceeded.\"}"
 
 const (
 	duration             = 10 * time.Minute
@@ -301,8 +302,8 @@ func (bl *BscListener) queryNftListByType(addr, network, tp string, page, pageSi
 		nftType, err := bl.queryNftFromMoralis(addr, network)
 		if err != nil {
 			return serializer.Response{
-				Code:  500,
-				Error: err.Error(),
+				Code: 500,
+				Msg:  err.Error(),
 			}
 		}
 		if len(nftType) == 0 {
@@ -317,8 +318,8 @@ func (bl *BscListener) queryNftListByType(addr, network, tp string, page, pageSi
 	err := json.Unmarshal([]byte(nftjson), &cdList)
 	if err != nil {
 		return serializer.Response{
-			Code:  500,
-			Error: err.Error(),
+			Code: 500,
+			Msg:  err.Error(),
 		}
 	}
 	dataList := cdList.CD
@@ -360,8 +361,8 @@ func (bl *BscListener) queryWalletAddrNft(addr string, network string) serialize
 		err := json.Unmarshal([]byte(t), &nftType)
 		if err != nil {
 			return serializer.Response{
-				Code:  500,
-				Error: err.Error(),
+				Code: 500,
+				Msg:  err.Error(),
 			}
 		}
 		return serializer.Response{
@@ -385,12 +386,16 @@ func (bl *BscListener) queryWalletAddrNft(addr string, network string) serialize
 func (bl *BscListener) queryNftFromMoralis(addr string, network string) ([]NftType, error) {
 	uuid := uuid.New()
 	bl.nlManager.QueryNftList(uuid, addr, network)
+	nftType := make([]NftType, 0)
 	result, err := bl.nlManager.WaitCall(uuid)
+	if err != nil {
+		return nftType, err
+	}
 	nr := result.([]NftResult)
 	nr = bl.convertNftResult(nr)
 	dataList := parseMetadata(nr)
 	dataMap := parseCacheData(dataList)
-	nftType := make([]NftType, 0)
+
 	for k, _ := range dataMap {
 		nftType = append(nftType, NftType{
 			Name:   k,
@@ -528,7 +533,7 @@ func parseMetadata(nr []NftResult) []CacheData {
 	return dataList
 }
 
-func QueryWalletNft(cursor, walletAddr, network string, res []NftResult) []NftResult {
+func QueryWalletNft(cursor, walletAddr, network string, res []NftResult) ([]NftResult, error) {
 	client := resty.New()
 	resp, err := client.R().
 		SetHeader("Accept", "application/json").
@@ -536,20 +541,24 @@ func QueryWalletNft(cursor, walletAddr, network string, res []NftResult) []NftRe
 		Get(getUrl(constants.GAME_NFT_ADDRESS, walletAddr, network, cursor))
 	if err != nil {
 		log.Errorf("query wallet nft , wallet : %s, err : %+v", walletAddr, err)
-		return res
+		return res, err
+	}
+	if string(resp.Body()) == MoralisRateLimit {
+		log.Errorf(MoralisRateLimit)
+		return res, xerrors.New(MoralisRateLimit)
 	}
 	var nrs NftResults
 	err = json.Unmarshal(resp.Body(), &nrs)
 	if err != nil {
 		log.Error("json unmarshal err : ", err)
-		return res
+		return res, err
 	}
 	res = append(res, nrs.Results...)
 	if nrs.Page*nrs.PageSize >= nrs.Total {
-		return res
+		return res, nil
 	}
-	res = QueryWalletNft(nrs.Cursor, walletAddr, network, res)
-	return res
+	res, err = QueryWalletNft(nrs.Cursor, walletAddr, network, res)
+	return res, nil
 }
 
 func getUrl(contractAddr, walletAddr, network, cursor string) string {
