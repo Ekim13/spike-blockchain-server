@@ -5,11 +5,27 @@ const blockConfirmHeight = 15
 const (
 	governanceToken TokenType = iota
 	gameToken
-	USDC
-	BNB
+	usdc
+	bnb
 	gameVault
 	gameNft
 )
+
+var shortNames = map[TokenType]string{
+	governanceToken: "governanceToken",
+	gameToken:       "gameToken",
+	bnb:             "bnb",
+	gameVault:       "gameVault",
+	gameNft:         "gameNft",
+}
+
+func (t TokenType) String() string {
+	n, ok := shortNames[t]
+	if !ok {
+		return "unknown"
+	}
+	return n
+}
 
 const (
 	SKK_RECHARGE = iota + 1

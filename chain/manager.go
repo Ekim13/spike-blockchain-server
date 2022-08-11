@@ -1,7 +1,9 @@
 package chain
 
 import (
+	"context"
 	"github.com/google/uuid"
+	"golang.org/x/xerrors"
 	"sync"
 	"time"
 )
@@ -63,7 +65,7 @@ func (m *NftListManager) handle() {
 
 	queueLen := m.nlq.Len()
 	for i := 0; i < queueLen; i++ {
-		if !m.counter.Allow() {
+		if !m.counter.Allow(1) {
 			continue
 		}
 		t := (*m.nlq)[i]
@@ -74,7 +76,7 @@ func (m *NftListManager) handle() {
 	}
 }
 
-func (m *NftListManager) WaitCall(uuid uuid.UUID) (interface{}, error) {
+func (m *NftListManager) WaitCall(ctx context.Context, uuid uuid.UUID) (interface{}, error) {
 	defer func() {
 		m.workLk.Lock()
 		defer m.workLk.Unlock()
@@ -90,6 +92,8 @@ func (m *NftListManager) WaitCall(uuid uuid.UUID) (interface{}, error) {
 	select {
 	case res := <-ch:
 		return res.r, res.err
+	case <-ctx.Done():
+		return nil, xerrors.New("query nft list time out")
 	}
 }
 
@@ -98,118 +102,43 @@ func (m *NftListManager) queryNftListByMoralis(uuid uuid.UUID, walletAddr, netwo
 	res, err := QueryWalletNft("", walletAddr, network, res)
 	m.workLk.Lock()
 	defer m.workLk.Unlock()
-	m.callRes[uuid] <- result{
-		r:   res,
-		err: err,
-	}
-}
-
-type NativeTxManager struct {
-	counter Counter
-	ntq     *nativeTxQueue
-	listLk  sync.Mutex
-	workLk  sync.Mutex
-	callRes map[uuid.UUID]chan result
-	notify  chan struct{}
-}
-
-func NewNativeTxManager() *NativeTxManager {
-	var counter Counter
-	counter.Set(6, time.Second)
-	m := &NativeTxManager{
-		counter: counter,
-		ntq:     &nativeTxQueue{},
-		callRes: map[uuid.UUID]chan result{},
-		notify:  make(chan struct{}),
-	}
-	go m.RunSched()
-	return m
-}
-
-func (m *NativeTxManager) QueryNativeTxRecord(uuid uuid.UUID, walletAddr string, blockNum uint64) {
-	m.listLk.Lock()
-	defer m.listLk.Unlock()
-	m.ntq.Push(&NativeTxReq{
-		uuid:       uuid,
-		walletAddr: walletAddr,
-		blockNum:   blockNum,
-	})
-	m.notify <- struct{}{}
-}
-
-func (m *NativeTxManager) RunSched() {
-	ticker := time.NewTicker(500 * time.Millisecond)
-	for {
-		select {
-		case <-ticker.C:
-
-		case <-m.notify:
-
-		}
-		m.handle()
-	}
-}
-
-func (m *NativeTxManager) handle() {
-	m.listLk.Lock()
-	defer m.listLk.Unlock()
-	queueLen := m.ntq.Len()
-	for i := 0; i < queueLen; i++ {
-		if !m.counter.Allow() {
-			continue
-		}
-		t := (*m.ntq)[i]
-		m.ntq.Remove(i)
-		go func(task *NativeTxReq) {
-			m.queryNativeTxRecordByBscScan(task.uuid, task.walletAddr, task.blockNum)
-		}(t)
-	}
-}
-
-func (m *NativeTxManager) WaitCall(uuid uuid.UUID) (interface{}, error) {
-	defer func() {
-		m.workLk.Lock()
-		defer m.workLk.Unlock()
-		delete(m.callRes, uuid)
-	}()
-	m.workLk.Lock()
 	ch, ok := m.callRes[uuid]
-	if !ok {
-		ch = make(chan result, 1)
-		m.callRes[uuid] = ch
-	}
-	m.workLk.Unlock()
-	select {
-	case res := <-ch:
-		return res.r, res.err
+	if ok {
+		ch <- result{
+			r:   res,
+			err: err,
+		}
 	}
 }
 
-func (m *NativeTxManager) queryNativeTxRecordByBscScan(uuid uuid.UUID, walletAddr string, blockNum uint64) {
+func (m *TxRecordManager) queryNativeTxRecordByBscScan(uuid uuid.UUID, walletAddr string, blockNum uint64) {
 	res, err := queryNativeTxRecord(walletAddr, blockNum)
 	m.workLk.Lock()
 	defer m.workLk.Unlock()
-	m.callRes[uuid] <- result{
-		r:   res,
-		err: err,
+	ch, ok := m.callRes[uuid]
+	if ok {
+		ch <- result{
+			r:   res,
+			err: err,
+		}
 	}
 }
 
-type ERC20TxManager struct {
+type TxRecordManager struct {
 	counter Counter
-	etq     *erc20TxQueue
+	trq     *txRecordQueue
 	listLk  sync.Mutex
 	workLk  sync.Mutex
 	callRes map[uuid.UUID]chan result
 	notify  chan struct{}
 }
 
-func NewERC20TxManager() *ERC20TxManager {
+func NewTxRecordManager() *TxRecordManager {
 	var counter Counter
-	counter.Set(6, time.Second)
-	m := &ERC20TxManager{
+	counter.Set(12, time.Second)
+	m := &TxRecordManager{
 		counter: counter,
-		etq:     &erc20TxQueue{},
+		trq:     &txRecordQueue{},
 		callRes: map[uuid.UUID]chan result{},
 		notify:  make(chan struct{}),
 	}
@@ -217,10 +146,10 @@ func NewERC20TxManager() *ERC20TxManager {
 	return m
 }
 
-func (m *ERC20TxManager) QueryERC20TxRecord(uuid uuid.UUID, contractAddr, walletAddr string, blockNum uint64) {
+func (m *TxRecordManager) QueryTxRecord(uuid uuid.UUID, contractAddr, walletAddr string, blockNum uint64) {
 	m.listLk.Lock()
 	defer m.listLk.Unlock()
-	m.etq.Push(&ERC20TxReq{
+	m.trq.Push(&TxRecordReq{
 		uuid:         uuid,
 		walletAddr:   walletAddr,
 		contractAddr: contractAddr,
@@ -229,7 +158,7 @@ func (m *ERC20TxManager) QueryERC20TxRecord(uuid uuid.UUID, contractAddr, wallet
 	m.notify <- struct{}{}
 }
 
-func (m *ERC20TxManager) RunSched() {
+func (m *TxRecordManager) RunSched() {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	for {
 		select {
@@ -242,23 +171,31 @@ func (m *ERC20TxManager) RunSched() {
 	}
 }
 
-func (m *ERC20TxManager) handle() {
+func (m *TxRecordManager) handle() {
 	m.listLk.Lock()
 	defer m.listLk.Unlock()
-	queueLen := m.etq.Len()
+	queueLen := m.trq.Len()
 	for i := 0; i < queueLen; i++ {
-		if !m.counter.Allow() {
+		weight := 1
+		t := (*m.trq)[i]
+		if t.contractAddr == "" {
+			weight = 2
+		}
+		if !m.counter.Allow(weight) {
 			continue
 		}
-		t := (*m.etq)[i]
-		m.etq.Remove(i)
-		go func(task *ERC20TxReq) {
+		m.trq.Remove(i)
+		go func(task *TxRecordReq) {
+			if task.contractAddr == "" {
+				m.queryNativeTxRecordByBscScan(task.uuid, task.walletAddr, task.blockNum)
+				return
+			}
 			m.queryErc20TxRecordByBscScan(task.uuid, task.contractAddr, task.walletAddr, task.blockNum)
 		}(t)
 	}
 }
 
-func (m *ERC20TxManager) WaitCall(uuid uuid.UUID) (interface{}, error) {
+func (m *TxRecordManager) WaitCall(ctx context.Context, uuid uuid.UUID) (interface{}, error) {
 	defer func() {
 		m.workLk.Lock()
 		defer m.workLk.Unlock()
@@ -275,15 +212,20 @@ func (m *ERC20TxManager) WaitCall(uuid uuid.UUID) (interface{}, error) {
 	select {
 	case res := <-ch:
 		return res.r, res.err
+	case <-ctx.Done():
+		return nil, xerrors.New("query tx record time out")
 	}
 }
 
-func (m *ERC20TxManager) queryErc20TxRecordByBscScan(uuid uuid.UUID, contractAddr, walletAddr string, blockNum uint64) {
+func (m *TxRecordManager) queryErc20TxRecordByBscScan(uuid uuid.UUID, contractAddr, walletAddr string, blockNum uint64) {
 	res, err := queryERC20TxRecord(contractAddr, walletAddr, blockNum)
 	m.workLk.Lock()
 	defer m.workLk.Unlock()
-	m.callRes[uuid] <- result{
-		r:   res,
-		err: err,
+	ch, ok := m.callRes[uuid]
+	if ok {
+		ch <- result{
+			r:   res,
+			err: err,
+		}
 	}
 }

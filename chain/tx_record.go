@@ -8,10 +8,18 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/go-resty/resty/v2"
 	"github.com/google/uuid"
+	"golang.org/x/xerrors"
+	"sort"
 	"spike-blockchain-server/constants"
 	"spike-blockchain-server/serializer"
+	"strconv"
 	"strings"
+	"time"
 )
+
+const queryTxRecordTimeout = 10 * time.Second
+
+const BscScanRateLimit = "\"Max rate limit reached\""
 
 type NativeTransactionRecordService struct {
 	Address string `form:"address" json:"address" binding:"required"`
@@ -121,7 +129,10 @@ func queryNativeTxRecord(address string, blockNum uint64) (BscRes, error) {
 	if err != nil {
 		return bscRes, err
 	}
-	json.Unmarshal(resp.Body(), &bscRes)
+	err = json.Unmarshal(resp.Body(), &bscRes)
+	if err != nil {
+		return bscRes, xerrors.New(BscScanRateLimit)
+	}
 
 	resp, err = client.R().
 		SetHeader("Accept", "application/json").
@@ -129,7 +140,10 @@ func queryNativeTxRecord(address string, blockNum uint64) (BscRes, error) {
 	if err != nil {
 		return bscRes, err
 	}
-	json.Unmarshal(resp.Body(), &bscInternalRes)
+	err = json.Unmarshal(resp.Body(), &bscInternalRes)
+	if err != nil {
+		return bscRes, xerrors.New(BscScanRateLimit)
+	}
 	bscRes.Result = append(bscRes.Result, bscInternalRes.Result...)
 	return bscRes, nil
 }
@@ -168,9 +182,12 @@ func (bl *BscListener) findFindNativeTxRecord(address string) serializer.Respons
 func (bl *BscListener) FindNativeTransactionRecord(address string) (BscRes, error) {
 	blockNum := bl.GetBlockNum()
 	uuid := uuid.New()
-	bl.ntManager.QueryNativeTxRecord(uuid, address, blockNum)
-	res, err := bl.ntManager.WaitCall(uuid)
+	ctx, cancel := context.WithTimeout(context.TODO(), queryTxRecordTimeout)
+	bl.trManager.QueryTxRecord(uuid, "", address, blockNum)
+	res, err := bl.trManager.WaitCall(ctx, uuid)
+	cancel()
 	if err != nil {
+		log.Errorf("QueryNativeTxRecord  err :%+v", err)
 		return BscRes{}, err
 	}
 	bscRes := res.(BscRes)
@@ -179,7 +196,7 @@ func (bl *BscListener) FindNativeTransactionRecord(address string) (BscRes, erro
 	if len(bscRes.Result) == 0 {
 		bscRes.Result = make([]Result, 0)
 		cacheData, _ := json.Marshal(bscRes)
-		bl.rc.Set(address+nativeTxRecordSuffix, string(cacheData), duration)
+		bl.rc.Set(address+nativeTxRecordSuffix, string(cacheData), txRecordDuration)
 		return bscRes, nil
 	}
 
@@ -193,29 +210,37 @@ func (bl *BscListener) FindNativeTransactionRecord(address string) (BscRes, erro
 			continue
 		}
 	}
+	sort.Slice(bnbRecord, func(i, j int) bool {
+		time1, _ := strconv.Atoi(bnbRecord[i].TimeStamp)
+		time2, _ := strconv.Atoi(bnbRecord[j].TimeStamp)
+		return time1 > time2
+	})
 	bscRes.Result = bnbRecord
 	cacheData, _ := json.Marshal(bscRes)
-	bl.rc.Set(address+nativeTxRecordSuffix, string(cacheData), duration)
+	bl.rc.Set(address+nativeTxRecordSuffix, string(cacheData), txRecordDuration)
 	return bscRes, nil
 }
 
 func (bl *BscListener) FindFindERC20TxRecord(contractAddr, address string) (BscRes, error) {
 	blockNum := bl.GetBlockNum()
 	uuid := uuid.New()
-	bl.etManager.QueryERC20TxRecord(uuid, contractAddr, address, blockNum)
-	res, err := bl.etManager.WaitCall(uuid)
+	ctx, cancel := context.WithTimeout(context.TODO(), queryTxRecordTimeout)
+	bl.trManager.QueryTxRecord(uuid, contractAddr, address, blockNum)
+	res, err := bl.trManager.WaitCall(ctx, uuid)
+	cancel()
 	if err != nil {
+		log.Errorf("QueryErc20TxRecord  err :%+v", err)
 		return BscRes{}, err
 	}
 	bscRes := res.(BscRes)
 	if len(bscRes.Result) == 0 {
 		bscRes.Result = make([]Result, 0)
 		cacheData, _ := json.Marshal(bscRes)
-		bl.rc.Set(address+contractAddr+erc20TxRecordSuffix, string(cacheData), duration)
+		bl.rc.Set(address+contractAddr+erc20TxRecordSuffix, string(cacheData), txRecordDuration)
 		return bscRes, nil
 	}
 	cacheData, _ := json.Marshal(bscRes)
-	bl.rc.Set(address+contractAddr+erc20TxRecordSuffix, string(cacheData), duration)
+	bl.rc.Set(address+contractAddr+erc20TxRecordSuffix, string(cacheData), txRecordDuration)
 	return bscRes, nil
 }
 
@@ -240,6 +265,10 @@ func queryERC20TxRecord(contractAddr, address string, blockNum uint64) (BscRes, 
 	if err != nil {
 		return bscRes, err
 	}
-	json.Unmarshal(resp.Body(), &bscRes)
+	err = json.Unmarshal(resp.Body(), &bscRes)
+
+	if err != nil {
+		return bscRes, xerrors.New(BscScanRateLimit)
+	}
 	return bscRes, nil
 }

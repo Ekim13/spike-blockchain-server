@@ -5,9 +5,12 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/go-redis/redis"
 	logger "github.com/ipfs/go-log"
+	"math/big"
 	"spike-blockchain-server/cache"
 	"spike-blockchain-server/constants"
 	"spike-blockchain-server/game"
+	"sync"
+	"time"
 )
 
 var log = logger.Logger("chain")
@@ -18,25 +21,30 @@ const (
 	SKK_BLOCKNUM        = "skk_blockNum"
 	SKS_BLOCKNUM        = "sks_blockNum"
 	AUNFT_BLOCKNUM      = "aunft_blockNum"
-	BLOCK_NUM           = "blockNum"
+	BLOCK_NUM           = "blockNum" + constants.MACHINE_ID
 )
 
+type ErrMsg struct {
+	tp   TokenType
+	from *big.Int
+	to   *big.Int
+}
+
 type BscListener struct {
-	network   string
-	nlManager *NftListManager
-	ntManager *NativeTxManager
-	etManager *ERC20TxManager
-	ec        *ethclient.Client
-	rc        *redis.Client
-	l         map[TokenType]Listener
+	network     string
+	nlManager   *NftListManager
+	trManager   *TxRecordManager
+	ec          *ethclient.Client
+	rc          *redis.Client
+	l           map[TokenType]Listener
+	errorHandle chan ErrMsg
 }
 
 func NewBscListener(speedyNodeAddress string, targetWalletAddr string) (*BscListener, error) {
 	log.Infof("bsc listener start")
 	bl := &BscListener{}
 	bl.nlManager = NewNftListManager()
-	bl.ntManager = NewNativeTxManager()
-	bl.etManager = NewERC20TxManager()
+	bl.trManager = NewTxRecordManager()
 
 	client, err := ethclient.Dial(speedyNodeAddress)
 	if err != nil {
@@ -53,6 +61,8 @@ func NewBscListener(speedyNodeAddress string, targetWalletAddr string) (*BscList
 		panic("not expected chainId")
 	}
 
+	errorHandle := make(chan ErrMsg, 10)
+	bl.errorHandle = errorHandle
 	bl.rc = cache.RedisClient
 	bl.ec = client
 	erc20Notify := make(chan ERC20Tx, 10)
@@ -68,11 +78,11 @@ func NewBscListener(speedyNodeAddress string, targetWalletAddr string) (*BscList
 	eb.Subscribe(newBlockTopic, aunftChan)
 
 	l := make(map[TokenType]Listener)
-	l[BNB] = newBNBListener(newBNBTarget(targetWalletAddr), bl.ec, bl.rc, erc20Notify)
-	l[gameVault] = newGameVaultListener(newGameVaultTarget(targetWalletAddr), constants.GAME_VAULT_ADDRESS, GAME_VAULT_BLOCKNUM, bl.ec, bl.rc, erc20Notify, vaultChan, getABI(GameVaultABI))
-	l[governanceToken] = newERC20Listener(newSKKTarget(targetWalletAddr), constants.GOVERNANCE_TOKEN_ADDRESS, SKK_BLOCKNUM, bl.ec, bl.rc, erc20Notify, skkChan, getABI(GovernanceTokenABI))
-	l[gameToken] = newERC20Listener(newSKSTarget(targetWalletAddr), constants.GAME_TOKEN_ADDRESS, SKS_BLOCKNUM, bl.ec, bl.rc, erc20Notify, sksChan, getABI(GameTokenABI))
-	l[gameNft] = newAUNFTListener(newAUNFTTarget(targetWalletAddr), constants.GAME_NFT_ADDRESS, AUNFT_BLOCKNUM, bl.ec, bl.rc, erc721Notify, aunftChan, getABI(GameNftABI))
+	l[bnb] = newBNBListener(newBNBTarget(targetWalletAddr), bl.ec, bl.rc, erc20Notify, errorHandle)
+	l[gameVault] = newGameVaultListener(newGameVaultTarget(targetWalletAddr), constants.GAME_VAULT_ADDRESS, gameVault, bl.ec, bl.rc, erc20Notify, vaultChan, getABI(GameVaultABI), errorHandle)
+	l[governanceToken] = newERC20Listener(newSKKTarget(targetWalletAddr), constants.GOVERNANCE_TOKEN_ADDRESS, governanceToken, bl.ec, bl.rc, erc20Notify, skkChan, getABI(GovernanceTokenABI), errorHandle)
+	l[gameToken] = newERC20Listener(newSKSTarget(targetWalletAddr), constants.GAME_TOKEN_ADDRESS, gameToken, bl.ec, bl.rc, erc20Notify, sksChan, getABI(GameTokenABI), errorHandle)
+	l[gameNft] = newAUNFTListener(newAUNFTTarget(targetWalletAddr), constants.GAME_NFT_ADDRESS, gameNft, bl.ec, bl.rc, erc721Notify, aunftChan, getABI(GameNftABI), errorHandle)
 	bl.l = l
 	spikeTxMgr := newSpikeTxMgr(game.NewKafkaClient(constants.KAFKA_ADDR), erc20Notify, erc721Notify)
 	go spikeTxMgr.run()
@@ -80,32 +90,57 @@ func NewBscListener(speedyNodeAddress string, targetWalletAddr string) (*BscList
 }
 
 func (bl *BscListener) Run() {
+	go bl.handleError()
+	//sync
+	for {
+		nowBlockNum, err := bl.ec.BlockNumber(context.Background())
+		if err != nil {
+			time.Sleep(500 * time.Millisecond)
+			log.Error("query now bnb_blockNum err :", err)
+			continue
+		}
+		if bl.rc.Get(BLOCK_NUM).Err() == redis.Nil {
+			log.Infof("blockNum is not exist")
+			bl.rc.Set(BLOCK_NUM, nowBlockNum-blockConfirmHeight, 0)
+			break
+		}
+		cacheBlockNum, err := bl.rc.Get(BLOCK_NUM).Uint64()
+		if err != nil {
+			log.Error("query cache bnb_blockNum err : ", err)
+			continue
+		}
+		if cacheBlockNum >= nowBlockNum-blockConfirmHeight {
+			log.Infof("sync done")
+			break
+		}
+		var wg sync.WaitGroup
+		for _, listener := range bl.l {
+			wg.Add(1)
+			go func(l Listener) {
+				defer wg.Done()
+				l.handlePastBlock(big.NewInt(int64(cacheBlockNum)), big.NewInt(int64(nowBlockNum-blockConfirmHeight)))
+			}(listener)
+		}
+		wg.Wait()
+		bl.rc.Set(BLOCK_NUM, nowBlockNum-blockConfirmHeight, 0)
+	}
+
 	for _, listener := range bl.l {
 		go func(l Listener) {
 			l.run()
 		}(listener)
 	}
+}
 
-	if bl.rc.Get(BLOCK_NUM).Err() == redis.Nil {
-		log.Infof("blockNum is not exist")
-		return
-	}
-	nowBlockNum, err := bl.ec.BlockNumber(context.Background())
-	if err != nil {
-		log.Error("query now bnb_blockNum err :", err)
-		return
-	}
-	cacheBlockNum, err := bl.rc.Get(BLOCK_NUM).Uint64()
-	if err != nil {
-		log.Error("query cache bnb_blockNum err : ", err)
-		return
-	}
-	if cacheBlockNum < nowBlockNum-blockConfirmHeight {
-		for _, listener := range bl.l {
-			go func(l Listener) {
-				l.handlePastBlock(cacheBlockNum, nowBlockNum-blockConfirmHeight)
-			}(listener)
+func (bl *BscListener) handleError() {
+	for {
+		select {
+		case msg := <-bl.errorHandle:
+			log.Infof("handle err ,type : %s, from : %d, to : %d", msg.tp.String(), msg.from.Int64(), msg.to.Int64())
+			if _, ok := bl.l[msg.tp]; ok {
+				time.Sleep(time.Second)
+				bl.l[msg.tp].handlePastBlock(msg.from, msg.to)
+			}
 		}
-
 	}
 }

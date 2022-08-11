@@ -58,93 +58,106 @@ func (t *SKKTarget) Accept(fromAddr, toAddr string) (bool, uint64) {
 type ERC20Listener struct {
 	TxFilter
 	contractAddr   string
-	cacheBlockNum  string
+	tokenType      TokenType
 	erc20Notify    chan ERC20Tx
 	newBlockNotify DataChannel
 	ec             *ethclient.Client
 	rc             *redis.Client
 	abi            abi.ABI
+	errorHandle    chan ErrMsg
 }
 
-func newERC20Listener(filter TxFilter, contractAddr string, cacheBlockNum string, ec *ethclient.Client, rc *redis.Client, erc20Notify chan ERC20Tx, newBlockNotify DataChannel, abi abi.ABI) *ERC20Listener {
-	return &ERC20Listener{
+func newERC20Listener(filter TxFilter, contractAddr string, tokenType TokenType, ec *ethclient.Client, rc *redis.Client, erc20Notify chan ERC20Tx, newBlockNotify DataChannel, abi abi.ABI, errorHandle chan ErrMsg) *ERC20Listener {
+	el := &ERC20Listener{
 		filter,
 		contractAddr,
-		cacheBlockNum,
+		tokenType,
 		erc20Notify,
 		newBlockNotify,
 		ec,
 		rc,
 		abi,
+		errorHandle,
 	}
+	return el
 }
 
 func (el *ERC20Listener) run() {
 	go el.NewEventFilter(el.contractAddr)
 }
 
-func (el *ERC20Listener) handlePastBlock(fromBlock, toBlock uint64) {
-	go el.PastEventFilter(el.contractAddr, fromBlock, toBlock)
-}
-
 func (el *ERC20Listener) NewEventFilter(contractAddr string) error {
 	for {
 		select {
 		case de := <-el.newBlockNotify:
-			height := de.Data.(*big.Int).Uint64()
-			el.PastEventFilter(contractAddr, height, height)
+			height := de.Data.(*big.Int)
+			el.handlePastBlock(height, height)
 		}
 	}
 }
 
-func (el *ERC20Listener) PastEventFilter(contractAddr string, fromBlockNum, toBlockNum uint64) error {
-	log.Infof("erc20 past event filter, type : %s, fromBlock : %d, toBlock : %d ", el.cacheBlockNum, fromBlockNum, toBlockNum)
+func (el *ERC20Listener) handlePastBlock(fromBlockNum, toBlockNum *big.Int) error {
+	log.Infof("erc20 past event filter, type : %v, fromBlock : %d, toBlock : %d ", el.tokenType.String(), fromBlockNum, toBlockNum)
 	ethClient := el.ec
-	contractAddress := common.HexToAddress(contractAddr)
+	contractAddress := common.HexToAddress(el.contractAddr)
 
 	query := ethereum.FilterQuery{
 		Addresses: []common.Address{contractAddress},
-		FromBlock: big.NewInt(int64(fromBlockNum)),
-		ToBlock:   big.NewInt(int64(toBlockNum)),
+		FromBlock: fromBlockNum,
+		ToBlock:   toBlockNum,
 	}
 
 	sub, err := ethClient.FilterLogs(context.Background(), query)
 	if err != nil {
-		log.Error("erc20 subscribe err : ", err)
+		el.errorHandle <- ErrMsg{
+			tp:   el.tokenType,
+			from: fromBlockNum,
+			to:   toBlockNum,
+		}
+		log.Errorf("erc20 subscribe err : %+v, from : %d, to : %d, type : %s", err, fromBlockNum.Int64(), toBlockNum.Int64(), el.tokenType.String())
 		return err
 	}
 	for _, logEvent := range sub {
 		switch logEvent.Topics[0].String() {
 		case EventSignHash(TransferTopic):
-			intr, err := el.abi.Events["Transfer"].Inputs.Unpack(logEvent.Data)
+			msg := ErrMsg{
+				tp:   el.tokenType,
+				from: big.NewInt(int64(logEvent.BlockNumber)),
+				to:   big.NewInt(int64(logEvent.BlockNumber)),
+			}
+
+			input, err := el.abi.Events["Transfer"].Inputs.Unpack(logEvent.Data)
 			if err != nil {
 				log.Error("erc20 data unpack err : ", err)
+				el.errorHandle <- msg
 				break
 			}
 			fromAddr := common.HexToAddress(logEvent.Topics[1].Hex()).String()
 			toAddr := common.HexToAddress(logEvent.Topics[2].Hex()).String()
 			accept, txType := el.Accept(fromAddr, toAddr)
 			if !accept {
-				continue
+				break
 			}
-			var status uint64
 			recp, err := el.ec.TransactionReceipt(context.Background(), logEvent.TxHash)
-			status = recp.Status
 			if err != nil {
-				status = 0
+				el.errorHandle <- msg
+				log.Errorf("query txReceipt txHash : %s, err : %+v", logEvent.TxHash, err)
+				break
 			}
 			block, err := el.ec.BlockByNumber(context.Background(), big.NewInt(int64(logEvent.BlockNumber)))
 			if err != nil {
-				status = 0
+				el.errorHandle <- msg
+				log.Errorf("query BlockByNumber blockNum : %d, err : %+v", logEvent.BlockNumber, err)
+				break
 			}
 			el.erc20Notify <- ERC20Tx{
 				From:    fromAddr,
 				To:      toAddr,
 				TxType:  txType,
 				TxHash:  logEvent.TxHash.Hex(),
-				Status:  status,
+				Status:  recp.Status,
 				PayTime: int64(block.Time() * 1000),
-				Amount:  intr[0].(*big.Int).String(),
+				Amount:  input[0].(*big.Int).String(),
 			}
 		}
 	}

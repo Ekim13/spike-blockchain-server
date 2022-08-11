@@ -23,6 +23,7 @@ func Redis() error {
 	if err != nil {
 		// log connecting to redis failed
 		log.Error("redis init err : ", err)
+		panic("redis error")
 		return err
 	}
 	client.SAdd("api_key", "VV6I9K4T1XB9HEZ187XJI51AR2FT8CJ8VV", 0)

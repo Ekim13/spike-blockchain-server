@@ -24,11 +24,14 @@ import (
 	"time"
 )
 
+const queryNftListTimeout = 20 * time.Second
+
 var ErrorParam = errors.New("params error")
 var MoralisRateLimit = "{\"message\":\"Rate limit exceeded.\"}"
 
 const (
-	duration             = 10 * time.Minute
+	txRecordDuration     = 10 * time.Minute
+	nftListDuration      = 60 * time.Minute
 	nftTypeSuffix        = "_nftType"
 	nativeTxRecordSuffix = "_nativeTxRecord"
 	erc20TxRecordSuffix  = "_erc20TxRecord"
@@ -387,7 +390,9 @@ func (bl *BscListener) queryNftFromMoralis(addr string, network string) ([]NftTy
 	uuid := uuid.New()
 	bl.nlManager.QueryNftList(uuid, addr, network)
 	nftType := make([]NftType, 0)
-	result, err := bl.nlManager.WaitCall(uuid)
+	ctx, cancel := context.WithTimeout(context.TODO(), queryNftListTimeout)
+	result, err := bl.nlManager.WaitCall(ctx, uuid)
+	cancel()
 	if err != nil {
 		return nftType, err
 	}
@@ -407,7 +412,7 @@ func (bl *BscListener) queryNftFromMoralis(addr string, network string) ([]NftTy
 		if err != nil {
 			break
 		}
-		bl.SetJson(addr+k, string(cacheByte), duration)
+		bl.SetJson(addr+k, string(cacheByte), nftListDuration)
 	}
 
 	nftTypeByte, err := json.Marshal(nftType)
@@ -415,7 +420,7 @@ func (bl *BscListener) queryNftFromMoralis(addr string, network string) ([]NftTy
 		return nftType, err
 	}
 
-	bl.SetJson(addr+nftTypeSuffix, string(nftTypeByte), duration)
+	bl.SetJson(addr+nftTypeSuffix, string(nftTypeByte), nftListDuration)
 	return nftType, err
 }
 
