@@ -11,6 +11,9 @@ import (
 	"strings"
 )
 
+const Soul = "Soul"
+const Soul_Tank = "Soul Tank"
+
 const emptyAddress = "0x0000000000000000000000000000000000000000"
 
 type AUNFTTarget struct {
@@ -121,6 +124,11 @@ func (al *AUNFTListener) handlePastBlock(fromBlockNum, toBlockNum *big.Int) erro
 			_, txType := al.Accept(fromAddr, toAddr)
 			al.rc.Del(fromAddr + nftTypeSuffix)
 			al.rc.Del(toAddr + nftTypeSuffix)
+			al.rc.Del(fromAddr + Soul)
+			al.rc.Del(fromAddr + Soul_Tank)
+			al.rc.Del(toAddr + Soul_Tank)
+			al.rc.Del(toAddr + Soul)
+
 			al.erc721Notify <- ERC721Tx{
 				From:    fromAddr,
 				To:      toAddr,

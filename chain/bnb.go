@@ -78,7 +78,7 @@ func (bl *BNBListener) NewBlockFilter() error {
 			cacheHeight, err := bl.rc.Get(BLOCK_NUM).Int64()
 
 			if height.Int64()-1 > cacheHeight {
-				for i := cacheHeight; i < height.Int64(); i++ {
+				for i := cacheHeight + 1; i < height.Int64(); i++ {
 					log.Infof("ws node timeout err : height %d", i)
 					bl.errorHandle <- ErrMsg{
 						tp:   bnb,
@@ -98,7 +98,6 @@ func (bl *BNBListener) NewBlockFilter() error {
 					from: height,
 					to:   height,
 				}
-				break
 			}
 			bl.rc.Set(BLOCK_NUM, height.Int64(), 0)
 			log.Infof("bnb listen new block %d finished", height)

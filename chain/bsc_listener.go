@@ -45,7 +45,6 @@ func NewBscListener(speedyNodeAddress string, targetWalletAddr string) (*BscList
 	bl := &BscListener{}
 	bl.nlManager = NewNftListManager()
 	bl.trManager = NewTxRecordManager()
-
 	client, err := ethclient.Dial(speedyNodeAddress)
 	if err != nil {
 		log.Error("eth client dial err : ", err)
@@ -69,18 +68,18 @@ func NewBscListener(speedyNodeAddress string, targetWalletAddr string) (*BscList
 	erc721Notify := make(chan ERC721Tx, 10)
 
 	vaultChan := make(DataChannel, 10)
-	skkChan := make(DataChannel, 10)
+	//skkChan := make(DataChannel, 10)
 	sksChan := make(DataChannel, 10)
 	aunftChan := make(DataChannel, 10)
 	eb.Subscribe(newBlockTopic, vaultChan)
-	eb.Subscribe(newBlockTopic, skkChan)
+	//eb.Subscribe(newBlockTopic, skkChan)
 	eb.Subscribe(newBlockTopic, sksChan)
 	eb.Subscribe(newBlockTopic, aunftChan)
 
 	l := make(map[TokenType]Listener)
 	l[bnb] = newBNBListener(newBNBTarget(targetWalletAddr), bl.ec, bl.rc, erc20Notify, errorHandle)
 	l[gameVault] = newGameVaultListener(newGameVaultTarget(targetWalletAddr), constants.GAME_VAULT_ADDRESS, gameVault, bl.ec, bl.rc, erc20Notify, vaultChan, getABI(GameVaultABI), errorHandle)
-	l[governanceToken] = newERC20Listener(newSKKTarget(targetWalletAddr), constants.GOVERNANCE_TOKEN_ADDRESS, governanceToken, bl.ec, bl.rc, erc20Notify, skkChan, getABI(GovernanceTokenABI), errorHandle)
+	//l[governanceToken] = newERC20Listener(newSKKTarget(targetWalletAddr), constants.GOVERNANCE_TOKEN_ADDRESS, governanceToken, bl.ec, bl.rc, erc20Notify, skkChan, getABI(GovernanceTokenABI), errorHandle)
 	l[gameToken] = newERC20Listener(newSKSTarget(targetWalletAddr), constants.GAME_TOKEN_ADDRESS, gameToken, bl.ec, bl.rc, erc20Notify, sksChan, getABI(GameTokenABI), errorHandle)
 	l[gameNft] = newAUNFTListener(newAUNFTTarget(targetWalletAddr), constants.GAME_NFT_ADDRESS, gameNft, bl.ec, bl.rc, erc721Notify, aunftChan, getABI(GameNftABI), errorHandle)
 	bl.l = l
@@ -118,7 +117,7 @@ func (bl *BscListener) Run() {
 			wg.Add(1)
 			go func(l Listener) {
 				defer wg.Done()
-				l.handlePastBlock(big.NewInt(int64(cacheBlockNum)), big.NewInt(int64(nowBlockNum-blockConfirmHeight)))
+				l.handlePastBlock(big.NewInt(int64(cacheBlockNum+1)), big.NewInt(int64(nowBlockNum-blockConfirmHeight)))
 			}(listener)
 		}
 		wg.Wait()
@@ -138,7 +137,7 @@ func (bl *BscListener) handleError() {
 		case msg := <-bl.errorHandle:
 			log.Infof("handle err ,type : %s, from : %d, to : %d", msg.tp.String(), msg.from.Int64(), msg.to.Int64())
 			if _, ok := bl.l[msg.tp]; ok {
-				time.Sleep(time.Second)
+				time.Sleep(200 * time.Millisecond)
 				bl.l[msg.tp].handlePastBlock(msg.from, msg.to)
 			}
 		}
