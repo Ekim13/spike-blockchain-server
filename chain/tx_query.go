@@ -97,7 +97,7 @@ type Metadata struct {
 type SpikeInfo struct {
 	Version string `json:"version"`
 	Tp      string `json:"type"`
-	Avatar  string `json:"avatar"`
+	Url     string `json:"url"`
 }
 
 type Attr struct {
