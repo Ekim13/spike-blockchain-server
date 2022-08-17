@@ -19,6 +19,7 @@ require (
 )
 
 require (
+	github.com/BurntSushi/toml v1.2.0
 	github.com/StackExchange/wmi v0.0.0-20180116203802-5d049714c4a6 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect

@@ -4,14 +4,13 @@ import (
 	logger "github.com/ipfs/go-log"
 	"spike-blockchain-server/chain"
 	"spike-blockchain-server/config"
-	"spike-blockchain-server/constants"
 	"spike-blockchain-server/server"
 )
 
 func main() {
 	logger.SetLogLevel("*", "INFO")
 	config.Init()
-	bscClient, err := chain.NewBscListener(constants.MORALIS_SPEEDY_NODE, constants.GAME_VAULT_ADDRESS)
+	bscClient, err := chain.NewBscListener(config.Cfg.Chain.NodeAddress, config.Cfg.Contract.GameVaultAddress)
 	if err != nil {
 		//log
 		return

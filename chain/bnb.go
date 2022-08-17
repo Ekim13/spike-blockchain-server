@@ -7,6 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/go-redis/redis"
 	"math/big"
+	"spike-blockchain-server/config"
 	"strings"
 	"sync"
 	"time"
@@ -75,7 +76,7 @@ func (bl *BNBListener) NewBlockFilter() error {
 			log.Error("new block subscribe err : ", err)
 		case header := <-newBlockChan:
 			height := new(big.Int).Sub(header.Number, big.NewInt(blockConfirmHeight))
-			cacheHeight, err := bl.rc.Get(BLOCK_NUM).Int64()
+			cacheHeight, err := bl.rc.Get(BLOCKNUM + config.Cfg.Redis.MachineId).Int64()
 
 			if height.Int64()-1 > cacheHeight {
 				for i := cacheHeight + 1; i < height.Int64(); i++ {
@@ -99,7 +100,7 @@ func (bl *BNBListener) NewBlockFilter() error {
 					to:   height,
 				}
 			}
-			bl.rc.Set(BLOCK_NUM, height.Int64(), 0)
+			bl.rc.Set(BLOCKNUM+config.Cfg.Redis.MachineId, height.Int64(), 0)
 			log.Infof("bnb listen new block %d finished", height)
 		}
 	}

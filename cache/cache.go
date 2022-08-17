@@ -3,18 +3,17 @@ package cache
 import (
 	"github.com/go-redis/redis"
 	logger "github.com/ipfs/go-log"
-	"spike-blockchain-server/constants"
 )
 
 var log = logger.Logger("cache")
 
 var RedisClient *redis.Client
 
-func Redis() error {
+func Redis(address string, password string) error {
 	client := redis.NewClient(
 		&redis.Options{
-			Addr:       constants.REDIS_ADDR,
-			Password:   constants.REDIS_PW,
+			Addr:       address,
+			Password:   password,
 			MaxRetries: 1,
 		})
 

@@ -7,7 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/go-resty/resty/v2"
 	"os"
-	"spike-blockchain-server/constants"
+	"spike-blockchain-server/config"
 	"spike-blockchain-server/serializer"
 )
 
@@ -63,7 +63,7 @@ func (s *ERC20TransactionRecordService) FindERC20TransactionRecord() serializer.
 }
 
 func (s *ERC20TransactionRecordService) url(apiKey string, blockNumber uint64) string {
-	return fmt.Sprintf("%s?module=account&action=tokentx&address=%s&startblock=%d&endblock=%d&offset=10000&page=1&sort=desc&apikey=%s&contractaddress=%s", constants.BSCSCAN_API, s.Address, blockNumber-201600, blockNumber, apiKey, s.ContractAdress)
+	return fmt.Sprintf("%s?module=account&action=tokentx&address=%s&startblock=%d&endblock=%d&offset=10000&page=1&sort=desc&apikey=%s&contractaddress=%s", config.Cfg.BscScan.UrlPrefix, s.Address, blockNumber-201600, blockNumber, apiKey, s.ContractAdress)
 }
 
 type Result struct {

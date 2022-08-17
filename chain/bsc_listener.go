@@ -7,7 +7,7 @@ import (
 	logger "github.com/ipfs/go-log"
 	"math/big"
 	"spike-blockchain-server/cache"
-	"spike-blockchain-server/constants"
+	"spike-blockchain-server/config"
 	"spike-blockchain-server/game"
 	"sync"
 	"time"
@@ -21,7 +21,7 @@ const (
 	SKK_BLOCKNUM        = "skk_blockNum"
 	SKS_BLOCKNUM        = "sks_blockNum"
 	AUNFT_BLOCKNUM      = "aunft_blockNum"
-	BLOCK_NUM           = "blockNum" + constants.MACHINE_ID
+	BLOCKNUM            = "blockNum"
 )
 
 type ErrMsg struct {
@@ -78,12 +78,12 @@ func NewBscListener(speedyNodeAddress string, targetWalletAddr string) (*BscList
 
 	l := make(map[TokenType]Listener)
 	l[bnb] = newBNBListener(newBNBTarget(targetWalletAddr), bl.ec, bl.rc, erc20Notify, errorHandle)
-	l[gameVault] = newGameVaultListener(newGameVaultTarget(targetWalletAddr), constants.GAME_VAULT_ADDRESS, gameVault, bl.ec, bl.rc, erc20Notify, vaultChan, getABI(GameVaultABI), errorHandle)
+	l[gameVault] = newGameVaultListener(newGameVaultTarget(targetWalletAddr), config.Cfg.Contract.GameVaultAddress, gameVault, bl.ec, bl.rc, erc20Notify, vaultChan, getABI(GameVaultABI), errorHandle)
 	//l[governanceToken] = newERC20Listener(newSKKTarget(targetWalletAddr), constants.GOVERNANCE_TOKEN_ADDRESS, governanceToken, bl.ec, bl.rc, erc20Notify, skkChan, getABI(GovernanceTokenABI), errorHandle)
-	l[gameToken] = newERC20Listener(newSKSTarget(targetWalletAddr), constants.GAME_TOKEN_ADDRESS, gameToken, bl.ec, bl.rc, erc20Notify, sksChan, getABI(GameTokenABI), errorHandle)
-	l[gameNft] = newAUNFTListener(newAUNFTTarget(targetWalletAddr), constants.GAME_NFT_ADDRESS, gameNft, bl.ec, bl.rc, erc721Notify, aunftChan, getABI(GameNftABI), errorHandle)
+	l[gameToken] = newERC20Listener(newSKSTarget(targetWalletAddr), config.Cfg.Contract.GameTokenAddress, gameToken, bl.ec, bl.rc, erc20Notify, sksChan, getABI(GameTokenABI), errorHandle)
+	l[gameNft] = newAUNFTListener(newAUNFTTarget(targetWalletAddr), config.Cfg.Contract.GameNftAddress, gameNft, bl.ec, bl.rc, erc721Notify, aunftChan, getABI(GameNftABI), errorHandle)
 	bl.l = l
-	spikeTxMgr := newSpikeTxMgr(game.NewKafkaClient(constants.KAFKA_ADDR), erc20Notify, erc721Notify)
+	spikeTxMgr := newSpikeTxMgr(game.NewKafkaClient(config.Cfg.Kafka.Address), erc20Notify, erc721Notify)
 	go spikeTxMgr.run()
 	return bl, nil
 }
@@ -98,12 +98,12 @@ func (bl *BscListener) Run() {
 			log.Error("query now bnb_blockNum err :", err)
 			continue
 		}
-		if bl.rc.Get(BLOCK_NUM).Err() == redis.Nil {
+		if bl.rc.Get(BLOCKNUM+config.Cfg.Redis.MachineId).Err() == redis.Nil {
 			log.Infof("blockNum is not exist")
-			bl.rc.Set(BLOCK_NUM, nowBlockNum-blockConfirmHeight, 0)
+			bl.rc.Set(BLOCKNUM+config.Cfg.Redis.MachineId, nowBlockNum-blockConfirmHeight, 0)
 			break
 		}
-		cacheBlockNum, err := bl.rc.Get(BLOCK_NUM).Uint64()
+		cacheBlockNum, err := bl.rc.Get(BLOCKNUM + config.Cfg.Redis.MachineId).Uint64()
 		if err != nil {
 			log.Error("query cache bnb_blockNum err : ", err)
 			continue
@@ -121,7 +121,7 @@ func (bl *BscListener) Run() {
 			}(listener)
 		}
 		wg.Wait()
-		bl.rc.Set(BLOCK_NUM, nowBlockNum-blockConfirmHeight, 0)
+		bl.rc.Set(BLOCKNUM+config.Cfg.Redis.MachineId, nowBlockNum-blockConfirmHeight, 0)
 	}
 
 	for _, listener := range bl.l {

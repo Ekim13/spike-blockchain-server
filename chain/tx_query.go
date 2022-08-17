@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"sort"
 	"spike-blockchain-server/chain/contract"
+	"spike-blockchain-server/config"
 	"spike-blockchain-server/constants"
 	"spike-blockchain-server/serializer"
 	"strconv"
@@ -192,7 +193,7 @@ func (bl *BscListener) QueryNftMetadata(c *gin.Context) {
 }
 
 func (bl *BscListener) queryNftMetadata(tokenId int64, address string) serializer.Response {
-	aunft, err := contract.NewGameNft(common.HexToAddress(constants.GAME_NFT_ADDRESS), bl.ec)
+	aunft, err := contract.NewGameNft(common.HexToAddress(config.Cfg.Contract.GameNftAddress), bl.ec)
 	if err != nil {
 		log.Error("new auNft err : ", err)
 		return serializer.Response{
@@ -415,7 +416,7 @@ func (bl *BscListener) GetJson(key string) string {
 }
 
 func (bl *BscListener) convertNftResult(res []NftResult) []NftResult {
-	aunft, err := contract.NewGameNft(common.HexToAddress(constants.GAME_NFT_ADDRESS), bl.ec)
+	aunft, err := contract.NewGameNft(common.HexToAddress(config.Cfg.Contract.GameNftAddress), bl.ec)
 	if err != nil {
 		log.Error("new auNft err : ", err)
 		return res
@@ -521,8 +522,8 @@ func QueryWalletNft(cursor, walletAddr, network string, res []NftResult) ([]NftR
 	client := resty.New()
 	resp, err := client.R().
 		SetHeader("Accept", "application/json").
-		SetHeader("x-api-key", constants.MORALIS_KEY).
-		Get(getUrl(constants.GAME_NFT_ADDRESS, walletAddr, network, cursor))
+		SetHeader("x-api-key", config.Cfg.Moralis.XApiKey).
+		Get(getUrl(config.Cfg.Contract.GameNftAddress, walletAddr, network, cursor))
 	if err != nil {
 		log.Errorf("query wallet nft , wallet : %s, err : %+v", walletAddr, err)
 		return res, err
@@ -593,7 +594,7 @@ func (bl *BscListener) queryWalletBalance(address string) serializer.Response {
 	wg.Add(4)
 	go func() {
 		defer wg.Done()
-		skkContract, err := contract.NewGovernanceToken(common.HexToAddress(constants.GOVERNANCE_TOKEN_ADDRESS), bl.ec)
+		skkContract, err := contract.NewGovernanceToken(common.HexToAddress(config.Cfg.Contract.GovernanceTokenAddress), bl.ec)
 		if err != nil {
 			return
 		}
@@ -609,7 +610,7 @@ func (bl *BscListener) queryWalletBalance(address string) serializer.Response {
 
 	go func() {
 		defer wg.Done()
-		sksContract, err := contract.NewGameToken(common.HexToAddress(constants.GAME_TOKEN_ADDRESS), bl.ec)
+		sksContract, err := contract.NewGameToken(common.HexToAddress(config.Cfg.Contract.GameTokenAddress), bl.ec)
 		if err != nil {
 			return
 		}
@@ -625,7 +626,7 @@ func (bl *BscListener) queryWalletBalance(address string) serializer.Response {
 
 	go func() {
 		defer wg.Done()
-		usdcContract, err := contract.NewUsdc(common.HexToAddress(constants.USDC_TOKEN_ADDRESS), bl.ec)
+		usdcContract, err := contract.NewUsdc(common.HexToAddress(config.Cfg.Contract.UsdcAddress), bl.ec)
 		if err != nil {
 			return
 		}

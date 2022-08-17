@@ -7,6 +7,7 @@ import (
 	"github.com/go-resty/resty/v2"
 	logger "github.com/ipfs/go-log"
 	"spike-blockchain-server/chain"
+	"spike-blockchain-server/config"
 	"spike-blockchain-server/constants"
 	"spike-blockchain-server/serializer"
 	service "spike-blockchain-server/service/price"
@@ -44,7 +45,7 @@ func findERC20TokenPrice(token string) serializer.Response {
 
 	resp, err := client.R().
 		SetHeader("Accept", "application/json").
-		SetHeader("x-api-key", constants.MORALIS_KEY).
+		SetHeader("x-api-key", config.Cfg.Moralis.XApiKey).
 		Get(getUrl(contractAddr))
 	if err != nil {
 		return serializer.Response{

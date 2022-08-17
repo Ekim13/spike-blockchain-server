@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/xerrors"
 	"sort"
-	"spike-blockchain-server/constants"
+	"spike-blockchain-server/config"
 	"spike-blockchain-server/serializer"
 	"strconv"
 	"strings"
@@ -106,7 +106,7 @@ func (bl *BscListener) findFindERC20TxRecord(address, contractAddr string) seria
 }
 
 func (bl *BscListener) GetBlockNum() uint64 {
-	if bl.rc.Get(BLOCK_NUM).Err() == redis.Nil {
+	if bl.rc.Get(BLOCKNUM+config.Cfg.Redis.MachineId).Err() == redis.Nil {
 		log.Infof("blockNum is not exist")
 		blockNum, err := bl.ec.BlockNumber(context.Background())
 		if err != nil {
@@ -114,7 +114,7 @@ func (bl *BscListener) GetBlockNum() uint64 {
 		}
 		return blockNum
 	} else {
-		blockNum, _ := bl.rc.Get(BLOCK_NUM).Uint64()
+		blockNum, _ := bl.rc.Get(BLOCKNUM + config.Cfg.Redis.MachineId).Uint64()
 		return blockNum
 	}
 }
@@ -205,7 +205,7 @@ func (bl *BscListener) FindNativeTransactionRecord(address string) (BscRes, erro
 			bnbRecord = append(bnbRecord, bscRes.Result[i])
 			continue
 		}
-		if strings.ToLower(bscRes.Result[i].From) == strings.ToLower(constants.GAME_VAULT_ADDRESS) {
+		if strings.ToLower(bscRes.Result[i].From) == strings.ToLower(config.Cfg.Contract.GameVaultAddress) {
 			bnbRecord = append(bnbRecord, bscRes.Result[i])
 			continue
 		}
@@ -245,15 +245,15 @@ func (bl *BscListener) FindFindERC20TxRecord(contractAddr, address string) (BscR
 }
 
 func getNativeUrl(blockNumber uint64, address string) string {
-	return fmt.Sprintf("%s?module=account&action=txlist&address=%s&startblock=%d&endblock=%d&offset=10000&page=1&sort=desc&apikey=%s", constants.BSCSCAN_API, address, blockNumber-201600, blockNumber, constants.BSC_API_KEY)
+	return fmt.Sprintf("%s?module=account&action=txlist&address=%s&startblock=%d&endblock=%d&offset=10000&page=1&sort=desc&apikey=%s", config.Cfg.BscScan.UrlPrefix, address, blockNumber-201600, blockNumber, config.Cfg.BscScan.ApiKey)
 }
 
 func getNativeInternalUrl(blockNumber uint64, address string) string {
-	return fmt.Sprintf("%s?module=account&action=txlistinternal&address=%s&startblock=%d&endblock=%d&offset=10000&page=1&sort=desc&apikey=%s", constants.BSCSCAN_API, address, blockNumber-201600, blockNumber, constants.BSC_API_KEY)
+	return fmt.Sprintf("%s?module=account&action=txlistinternal&address=%s&startblock=%d&endblock=%d&offset=10000&page=1&sort=desc&apikey=%s", config.Cfg.BscScan.UrlPrefix, address, blockNumber-201600, blockNumber, config.Cfg.BscScan.ApiKey)
 }
 
 func getERC20url(contractAddr, addr string, blockNumber uint64) string {
-	return fmt.Sprintf("%s?module=account&action=tokentx&address=%s&startblock=%d&endblock=%d&offset=10000&page=1&sort=desc&apikey=%s&contractaddress=%s", constants.BSCSCAN_API, addr, blockNumber-201600, blockNumber, constants.BSC_API_KEY, contractAddr)
+	return fmt.Sprintf("%s?module=account&action=tokentx&address=%s&startblock=%d&endblock=%d&offset=10000&page=1&sort=desc&apikey=%s&contractaddress=%s", config.Cfg.BscScan.UrlPrefix, addr, blockNumber-201600, blockNumber, config.Cfg.BscScan.ApiKey, contractAddr)
 }
 
 func queryERC20TxRecord(contractAddr, address string, blockNum uint64) (BscRes, error) {

@@ -11,7 +11,7 @@ import (
 	"math/big"
 	"os"
 	"spike-blockchain-server/chain"
-	"spike-blockchain-server/constants"
+	"spike-blockchain-server/config"
 	"spike-blockchain-server/serializer"
 	"strconv"
 	"strings"
@@ -122,5 +122,5 @@ func (s *NativeTransactionRecordService) FindNativeTransactionRecord() serialize
 }
 
 func (s *NativeTransactionRecordService) url(apiKey string, blockNumber uint64) string {
-	return fmt.Sprintf("%s?module=account&action=txlist&address=%s&startblock=%d&endblock=%d&offset=10000&page=1&sort=desc&apikey=%s", constants.BSCSCAN_API, s.Address, blockNumber-201600, blockNumber, apiKey)
+	return fmt.Sprintf("%s?module=account&action=txlist&address=%s&startblock=%d&endblock=%d&offset=10000&page=1&sort=desc&apikey=%s", config.Cfg.BscScan.UrlPrefix, s.Address, blockNumber-201600, blockNumber, apiKey)
 }
