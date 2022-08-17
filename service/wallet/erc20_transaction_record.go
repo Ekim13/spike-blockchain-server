@@ -7,7 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/go-resty/resty/v2"
 	"os"
-	"spike-blockchain-server/constants"
+	"spike-blockchain-server/config"
 	"spike-blockchain-server/serializer"
 )
 
@@ -46,7 +46,7 @@ func (s *ERC20TransactionRecordService) FindERC20TransactionRecord() serializer.
 			Error: err.Error(),
 		}
 	}
-	var bscRes BscRes
+	bscRes := &BscRes{Result: make([]Result, 0)}
 
 	err = json.Unmarshal(resp.Body(), &bscRes)
 	if err != nil {
@@ -63,17 +63,19 @@ func (s *ERC20TransactionRecordService) FindERC20TransactionRecord() serializer.
 }
 
 func (s *ERC20TransactionRecordService) url(apiKey string, blockNumber uint64) string {
-	return fmt.Sprintf("%s?module=account&action=tokentx&address=%s&startblock=%d&endblock=%d&offset=10000&page=1&sort=desc&apikey=%s&contractaddress=%s", constants.BSCSCAN_API, s.Address, blockNumber-201600, blockNumber, apiKey, s.ContractAdress)
+	return fmt.Sprintf("%s?module=account&action=tokentx&address=%s&startblock=%d&endblock=%d&offset=10000&page=1&sort=desc&apikey=%s&contractaddress=%s", config.Cfg.BscScan.UrlPrefix, s.Address, blockNumber-201600, blockNumber, apiKey, s.ContractAdress)
 }
 
 type Result struct {
 	Hash        string `json:"hash"`
 	TimeStamp   string `json:"timeStamp"`
 	BlockNumber string `json:"blockNumber"`
+	BlockHash   string `json:"blockHash"`
 	From        string `json:"from"`
 	To          string `json:"to"`
 	Value       string `json:"value"`
 	Input       string `json:"input"`
+	Type        string `json:"type"`
 }
 
 type BscRes struct {

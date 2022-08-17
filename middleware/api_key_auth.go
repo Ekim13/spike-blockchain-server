@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"os"
-
 	"github.com/gin-gonic/gin"
 
 	"spike-blockchain-server/cache"
@@ -19,7 +17,7 @@ func ApiKeyAuth() gin.HandlerFunc {
 			})
 			c.Abort()
 		} else {
-			res, _ := cache.RedisClient.SIsMember(os.Getenv("REDIS_API_KEY_STORE"), params.APIKey).Result()
+			res, _ := cache.RedisClient.SIsMember("api_key", params.APIKey).Result()
 			if res {
 				c.Next()
 			} else {

@@ -3,6 +3,7 @@ package game
 import (
 	"github.com/Shopify/sarama"
 	logger "github.com/ipfs/go-log"
+	"strings"
 	"time"
 )
 
@@ -12,6 +13,7 @@ const (
 	ERC20TXTOPIC    = "ack_erc20tx"
 	ERC721TXTOPIC   = "ack_erc721tx"
 	RECHARGETXTOPIC = "recharge"
+	IMPORTNFTTOPIC  = "import_nft"
 )
 
 type Msg struct {
@@ -21,7 +23,7 @@ type Msg struct {
 }
 
 type KafkaClient struct {
-	brokerAddresses string
+	brokerAddresses []string
 	producer        sarama.SyncProducer
 }
 
@@ -32,14 +34,14 @@ type MqApi interface {
 
 func NewKafkaClient(brokerAddresses string) *KafkaClient {
 	kc := &KafkaClient{}
-	kc.brokerAddresses = brokerAddresses
+	kc.brokerAddresses = strings.Split(brokerAddresses, ",")
 	config := sarama.NewConfig()
 	// Wait for all followers to reply ack to ensure that Kafka does not lose messages
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Return.Successes = true
 	config.Producer.Partitioner = sarama.NewHashPartitioner
 
-	producer, err := sarama.NewSyncProducer([]string{kc.brokerAddresses}, config)
+	producer, err := sarama.NewSyncProducer(kc.brokerAddresses, config)
 	if err != nil {
 		log.Error("kafka produce err : ", err)
 		return nil

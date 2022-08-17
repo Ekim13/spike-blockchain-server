@@ -3,21 +3,17 @@ package cache
 import (
 	"github.com/go-redis/redis"
 	logger "github.com/ipfs/go-log"
-	"os"
-	"strconv"
 )
 
 var log = logger.Logger("cache")
 
 var RedisClient *redis.Client
 
-func Redis() error {
-	db, _ := strconv.ParseUint(os.Getenv("REDIS_DB"), 10, 64)
+func Redis(address string, password string) error {
 	client := redis.NewClient(
 		&redis.Options{
-			Addr:       os.Getenv("REDIS_ADDR"),
-			Password:   os.Getenv("REDIS_PW"),
-			DB:         int(db),
+			Addr:       address,
+			Password:   password,
 			MaxRetries: 1,
 		})
 
@@ -26,8 +22,12 @@ func Redis() error {
 	if err != nil {
 		// log connecting to redis failed
 		log.Error("redis init err : ", err)
+		panic("redis error")
 		return err
 	}
+	client.SAdd("api_key", "VV6I9K4T1XB9HEZ187XJI51AR2FT8CJ8VV", 0)
+	client.SAdd("api_key", "CB3C47F716DC464EF5FB93941FBC8BBD95", 0)
+	client.SAdd("api_key", "1ADD650C83877E54E21EB00BF983B85AF9", 0)
 
 	RedisClient = client
 	return nil

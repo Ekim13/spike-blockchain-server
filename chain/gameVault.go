@@ -11,51 +11,24 @@ import (
 	"strings"
 )
 
-type SKSTarget struct {
+type GameVaultTarget struct {
 	txAddress string
 }
 
-func newSKSTarget(address string) *SKSTarget {
-	return &SKSTarget{
+func newGameVaultTarget(address string) *GameVaultTarget {
+	return &GameVaultTarget{
 		txAddress: address,
 	}
 }
 
-func (t *SKSTarget) Accept(fromAddr, toAddr string) (bool, uint64) {
-	if strings.ToLower(t.txAddress) == strings.ToLower(toAddr) {
-		return true, SKS_RECHARGE
-	}
-
+func (t *GameVaultTarget) Accept(fromAddr, toAddr string) (bool, uint64) {
 	if strings.ToLower(t.txAddress) == strings.ToLower(fromAddr) {
-		return true, SKS_WITHDRAW
+		return true, BNB_WITHDRAW
 	}
-
 	return false, NOT_EXIST
 }
 
-type SKKTarget struct {
-	txAddress string
-}
-
-func newSKKTarget(address string) *SKKTarget {
-	return &SKKTarget{
-		txAddress: address,
-	}
-}
-
-func (t *SKKTarget) Accept(fromAddr, toAddr string) (bool, uint64) {
-	if strings.ToLower(t.txAddress) == strings.ToLower(toAddr) {
-		return true, SKK_RECHARGE
-	}
-
-	if strings.ToLower(t.txAddress) == strings.ToLower(fromAddr) {
-		return true, SKK_WITHDRAW
-	}
-
-	return false, NOT_EXIST
-}
-
-type ERC20Listener struct {
+type GameVaultListener struct {
 	TxFilter
 	contractAddr   string
 	tokenType      TokenType
@@ -67,8 +40,8 @@ type ERC20Listener struct {
 	errorHandle    chan ErrMsg
 }
 
-func newERC20Listener(filter TxFilter, contractAddr string, tokenType TokenType, ec *ethclient.Client, rc *redis.Client, erc20Notify chan ERC20Tx, newBlockNotify DataChannel, abi abi.ABI, errorHandle chan ErrMsg) *ERC20Listener {
-	el := &ERC20Listener{
+func newGameVaultListener(filter TxFilter, contractAddr string, tokenType TokenType, ec *ethclient.Client, rc *redis.Client, erc20Notify chan ERC20Tx, newBlockNotify DataChannel, abi abi.ABI, errHandle chan ErrMsg) *GameVaultListener {
+	return &GameVaultListener{
 		filter,
 		contractAddr,
 		tokenType,
@@ -77,16 +50,15 @@ func newERC20Listener(filter TxFilter, contractAddr string, tokenType TokenType,
 		ec,
 		rc,
 		abi,
-		errorHandle,
+		errHandle,
 	}
-	return el
 }
 
-func (el *ERC20Listener) run() {
-	go el.NewEventFilter(el.contractAddr)
+func (el *GameVaultListener) run() {
+	go el.NewEventFilter()
 }
 
-func (el *ERC20Listener) NewEventFilter(contractAddr string) error {
+func (el *GameVaultListener) NewEventFilter() error {
 	for {
 		select {
 		case de := <-el.newBlockNotify:
@@ -96,9 +68,8 @@ func (el *ERC20Listener) NewEventFilter(contractAddr string) error {
 	}
 }
 
-func (el *ERC20Listener) handlePastBlock(fromBlockNum, toBlockNum *big.Int) error {
-	log.Infof("erc20 past event filter, type : %v, fromBlock : %d, toBlock : %d ", el.tokenType.String(), fromBlockNum, toBlockNum)
-	ethClient := el.ec
+func (el *GameVaultListener) handlePastBlock(fromBlockNum, toBlockNum *big.Int) error {
+	log.Infof("erc20 past event filter, type : %s, fromBlock : %d, toBlock : %d ", el.tokenType.String(), fromBlockNum, toBlockNum)
 	contractAddress := common.HexToAddress(el.contractAddr)
 
 	query := ethereum.FilterQuery{
@@ -107,33 +78,35 @@ func (el *ERC20Listener) handlePastBlock(fromBlockNum, toBlockNum *big.Int) erro
 		ToBlock:   toBlockNum,
 	}
 
-	sub, err := ethClient.FilterLogs(context.Background(), query)
+	sub, err := el.ec.FilterLogs(context.Background(), query)
 	if err != nil {
 		el.errorHandle <- ErrMsg{
 			tp:   el.tokenType,
 			from: fromBlockNum,
 			to:   toBlockNum,
 		}
-		log.Errorf("erc20 subscribe err : %+v, from : %d, to : %d, type : %s", err, fromBlockNum.Int64(), toBlockNum.Int64(), el.tokenType.String())
+		log.Errorf("game vault subscribe err : %+v, from : %d, to : %d", err, fromBlockNum.Int64(), toBlockNum.Int64())
 		return err
 	}
 	for _, logEvent := range sub {
 		switch logEvent.Topics[0].String() {
-		case EventSignHash(TransferTopic):
+		case EventSignHash(WITHRAWALTOPIC):
 			msg := ErrMsg{
 				tp:   el.tokenType,
 				from: big.NewInt(int64(logEvent.BlockNumber)),
 				to:   big.NewInt(int64(logEvent.BlockNumber)),
 			}
-
-			input, err := el.abi.Events["Transfer"].Inputs.Unpack(logEvent.Data)
+			input, err := el.abi.Events["Withdraw"].Inputs.Unpack(logEvent.Data)
 			if err != nil {
-				log.Error("erc20 data unpack err : ", err)
+				log.Error("game vault data unpack err : ", err)
 				el.errorHandle <- msg
 				break
 			}
-			fromAddr := common.HexToAddress(logEvent.Topics[1].Hex()).String()
-			toAddr := common.HexToAddress(logEvent.Topics[2].Hex()).String()
+			if input[0].(common.Address).String() != emptyAddress {
+				break
+			}
+			fromAddr := input[1].(common.Address).String()
+			toAddr := input[2].(common.Address).String()
 			accept, txType := el.Accept(fromAddr, toAddr)
 			if !accept {
 				break
@@ -157,7 +130,7 @@ func (el *ERC20Listener) handlePastBlock(fromBlockNum, toBlockNum *big.Int) erro
 				TxHash:  logEvent.TxHash.Hex(),
 				Status:  recp.Status,
 				PayTime: int64(block.Time() * 1000),
-				Amount:  input[0].(*big.Int).String(),
+				Amount:  input[3].(*big.Int).String(),
 			}
 		}
 	}

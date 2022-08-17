@@ -7,7 +7,9 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/go-redis/redis"
 	"math/big"
+	"spike-blockchain-server/config"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,23 +28,19 @@ func (t *BNBTarget) Accept(fromAddr, toAddr string) (bool, uint64) {
 		return true, BNB_RECHARGE
 	}
 
-	if strings.ToLower(t.txAddress) == strings.ToLower(fromAddr) {
-		return true, BNB_WITHDRAW
-	}
-
 	return false, NOT_EXIST
 }
 
 type BNBListener struct {
 	TxFilter
-	erc20Notify    chan ERC20Tx
-	rechargeNotify chan ERC20Tx
-	ec             *ethclient.Client
-	rc             *redis.Client
-	chainId        *big.Int
+	erc20Notify chan ERC20Tx
+	ec          *ethclient.Client
+	rc          *redis.Client
+	chainId     *big.Int
+	errorHandle chan ErrMsg
 }
 
-func newBNBListener(filter TxFilter, ec *ethclient.Client, rc *redis.Client, erc20Notify chan ERC20Tx, rechargeNotify chan ERC20Tx) *BNBListener {
+func newBNBListener(filter TxFilter, ec *ethclient.Client, rc *redis.Client, erc20Notify chan ERC20Tx, errorHandle chan ErrMsg) *BNBListener {
 	chainId, err := ec.NetworkID(context.Background())
 	if err != nil {
 		log.Error("query network id err : ", err)
@@ -51,38 +49,20 @@ func newBNBListener(filter TxFilter, ec *ethclient.Client, rc *redis.Client, erc
 	return &BNBListener{
 		filter,
 		erc20Notify,
-		rechargeNotify,
 		ec,
 		rc,
 		chainId,
+		errorHandle,
 	}
 }
 
 func (bl *BNBListener) run() {
 	go bl.NewBlockFilter()
-	if bl.rc.Get(BNB_BLOCKNUM).Err() == redis.Nil {
-		log.Infof("bnb_blockNum is not exist")
-		return
-	}
-	nowBlockNum, err := bl.ec.BlockNumber(context.Background())
-	if err != nil {
-		log.Error("query now bnb_blockNum err :", err)
-		return
-	}
-	blockNum, err := bl.rc.Get(BNB_BLOCKNUM).Uint64()
-	if err != nil {
-		log.Error("query cache bnb_blockNum err : ", err)
-		return
-	}
-	if blockNum < nowBlockNum {
-		bl.PastBlockFilter(blockNum, nowBlockNum)
-	}
 }
 
 func (bl *BNBListener) NewBlockFilter() error {
 	newBlockChan := make(chan *types.Header)
-	ethClient := bl.ec
-	sub, err := ethClient.SubscribeNewHead(context.Background(), newBlockChan)
+	sub, err := bl.ec.SubscribeNewHead(context.Background(), newBlockChan)
 	if err != nil {
 		log.Error("bnb subscribe new head err : ", err)
 		return err
@@ -91,43 +71,75 @@ func (bl *BNBListener) NewBlockFilter() error {
 		select {
 		case err = <-sub.Err():
 			sub = event.Resubscribe(time.Millisecond, func(ctx context.Context) (event.Subscription, error) {
-				return ethClient.SubscribeNewHead(context.Background(), newBlockChan)
+				return bl.ec.SubscribeNewHead(context.Background(), newBlockChan)
 			})
-			log.Error("bnb subscribe err : ", err)
+			log.Error("new block subscribe err : ", err)
 		case header := <-newBlockChan:
+			height := new(big.Int).Sub(header.Number, big.NewInt(blockConfirmHeight))
+			cacheHeight, err := bl.rc.Get(BLOCKNUM + config.Cfg.Redis.MachineId).Int64()
 
-			block, err := ethClient.BlockByHash(context.Background(), header.Hash())
-			if err != nil {
-				log.Errorf("bnb blockByHash err , height : %d  ,err : %v", block.Number(), err)
-				break
+			if height.Int64()-1 > cacheHeight {
+				for i := cacheHeight + 1; i < height.Int64(); i++ {
+					log.Infof("ws node timeout err : height %d", i)
+					bl.errorHandle <- ErrMsg{
+						tp:   bnb,
+						from: big.NewInt(i),
+						to:   big.NewInt(i),
+					}
+					eb.Publish(newBlockTopic, big.NewInt(i))
+				}
 			}
-			bl.SingleBlockFilter(block)
-			log.Infof("bnb listen new block %d finished", block.Number())
-			bl.rc.Set(BNB_BLOCKNUM, block.Number().Int64(), 0)
+			eb.Publish(newBlockTopic, height)
+			log.Infof("new block num : %d, height : %d", header.Number.Int64(), height.Int64())
+
+			err = bl.SingleBlockFilter(height)
+			if err != nil {
+				bl.errorHandle <- ErrMsg{
+					tp:   bnb,
+					from: height,
+					to:   height,
+				}
+			}
+			bl.rc.Set(BLOCKNUM+config.Cfg.Redis.MachineId, height.Int64(), 0)
+			log.Infof("bnb listen new block %d finished", height)
 		}
 	}
 }
 
-func (bl *BNBListener) PastBlockFilter(blockNum, nowBlockNum uint64) error {
-	for i := blockNum; i < nowBlockNum; i++ {
-		log.Infof("bnb past block num : %d", i)
-		go func(num uint64) {
-			block, err := bl.ec.BlockByNumber(context.Background(), big.NewInt(int64(num)))
+func (bl *BNBListener) handlePastBlock(blockNum, nowBlockNum *big.Int) error {
+	throttle := make(chan struct{}, 30)
+	var wg sync.WaitGroup
+	wg.Add(int(new(big.Int).Sub(nowBlockNum, blockNum).Int64()) + 1)
+	for i := blockNum.Int64(); i <= nowBlockNum.Int64(); i++ {
+		throttle <- struct{}{}
+		go func(height int64) {
+			defer func() {
+				wg.Done()
+				<-throttle
+			}()
+			h := big.NewInt(height)
+			err := bl.SingleBlockFilter(h)
 			if err != nil {
-				log.Error()
-				return
+				bl.errorHandle <- ErrMsg{
+					tp:   bnb,
+					from: h,
+					to:   h,
+				}
 			}
-			bl.SingleBlockFilter(block)
 		}(i)
 	}
+	wg.Wait()
 	return nil
 }
 
-func (bl *BNBListener) SingleBlockFilter(block *types.Block) error {
+func (bl *BNBListener) SingleBlockFilter(height *big.Int) error {
+	block, err := bl.ec.BlockByNumber(context.Background(), height)
+	if err != nil {
+		log.Errorf("bnb blockByHash heght : %d ,err : %+v", height.Int64(), err)
+		return err
+	}
 	log.Infof("bnb height : %d , tx num :  %d", block.Number(), len(block.Transactions()))
-
 	for _, tx := range block.Transactions() {
-		log.Infof("bnb tx : %s", tx.Hash())
 		var fromAddr string
 		if msg, err := tx.AsMessage(types.NewEIP155Signer(bl.chainId), nil); err == nil {
 			fromAddr = msg.From().Hex()
@@ -142,27 +154,21 @@ func (bl *BNBListener) SingleBlockFilter(block *types.Block) error {
 		if !accept {
 			continue
 		}
-		var status uint64
 		recp, err := bl.ec.TransactionReceipt(context.Background(), tx.Hash())
-		status = recp.Status
 		if err != nil {
 			log.Error("bnb TransactionReceipt err : ", err)
-			status = 0
+			return err
 		}
 		tx := ERC20Tx{
 			From:    fromAddr,
 			To:      tx.To().Hex(),
 			TxType:  txType,
 			TxHash:  tx.Hash().Hex(),
-			Status:  status,
+			Status:  recp.Status,
 			PayTime: int64(block.Time() * 1000),
 			Amount:  tx.Value().String(),
 		}
-		if check(int(txType)) {
-			bl.rechargeNotify <- tx
-		} else {
-			bl.erc20Notify <- tx
-		}
+		bl.erc20Notify <- tx
 	}
 	return nil
 }

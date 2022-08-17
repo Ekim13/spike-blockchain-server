@@ -2,7 +2,6 @@ package chain
 
 import (
 	"encoding/json"
-	"fmt"
 	"spike-blockchain-server/game"
 )
 
@@ -27,19 +26,17 @@ type ERC721Tx struct {
 }
 
 type SpikeTxMgr struct {
-	erc20Notify    chan ERC20Tx
-	erc721Notify   chan ERC721Tx
-	rechargeNotify chan ERC20Tx
-	close          chan struct{}
-	mqApi          game.MqApi
+	erc20Notify  chan ERC20Tx
+	erc721Notify chan ERC721Tx
+	close        chan struct{}
+	mqApi        game.MqApi
 }
 
-func newSpikeTxMgr(client *game.KafkaClient, erc20Notify chan ERC20Tx, rechargeNotify chan ERC20Tx, erc721Notify chan ERC721Tx) *SpikeTxMgr {
+func newSpikeTxMgr(client *game.KafkaClient, erc20Notify chan ERC20Tx, erc721Notify chan ERC721Tx) *SpikeTxMgr {
 	s := &SpikeTxMgr{
-		erc20Notify:    erc20Notify,
-		rechargeNotify: rechargeNotify,
-		erc721Notify:   erc721Notify,
-		mqApi:          client,
+		erc20Notify:  erc20Notify,
+		erc721Notify: erc721Notify,
+		mqApi:        client,
 	}
 
 	return s
@@ -55,28 +52,19 @@ func (s *SpikeTxMgr) run() {
 				break
 			}
 			log.Infof("erc20 value : %s", string(txByte))
+			var topic string
+			if checkRecharge(int(erc20Tx.TxType)) {
+				topic = game.RECHARGETXTOPIC
+			} else {
+				topic = game.ERC20TXTOPIC
+			}
 			err = s.mqApi.SendMessage(game.Msg{
-				Topic: game.ERC20TXTOPIC,
+				Topic: topic,
 				Key:   erc20Tx.TxHash,
 				Value: string(txByte),
 			})
 			if err != nil {
-				fmt.Println("", err)
-			}
-		case erc20Tx := <-s.rechargeNotify:
-			txByte, err := json.Marshal(erc20Tx)
-			if err != nil {
-				log.Error("json marshal err : ", err)
-				break
-			}
-			log.Infof("value : %s", string(txByte))
-			err = s.mqApi.SendMessage(game.Msg{
-				Topic: game.RECHARGETXTOPIC,
-				Key:   erc20Tx.TxHash,
-				Value: string(txByte),
-			})
-			if err != nil {
-				log.Error("", err)
+				log.Error("erc20 tx produce err : ", err)
 			}
 		case erc721Tx := <-s.erc721Notify:
 			txByte, err := json.Marshal(erc721Tx)
@@ -85,18 +73,23 @@ func (s *SpikeTxMgr) run() {
 				log.Error(err)
 				break
 			}
+			var topic string
+			if checkImport(int(erc721Tx.TxType)) {
+				topic = game.IMPORTNFTTOPIC
+			} else {
+				topic = game.ERC721TXTOPIC
+			}
 			err = s.mqApi.SendMessage(game.Msg{
-				Topic: game.ERC721TXTOPIC,
+				Topic: topic,
 				Key:   erc721Tx.TxHash,
 				Value: string(txByte),
 			})
 			if err != nil {
-				log.Error("", err)
+				log.Error("erc721 tx produce err : ", err)
 			}
 		case <-s.close:
 			//log
 			return
 		}
 	}
-
 }

@@ -1,0 +1,25 @@
+[moralis]
+    x_api_key = "7L9fFRFaUpKOlFoUZi7SN0UBiUWbHgf6tTenyqg19TjPRTGuRS46UMRierHQ3XIs"
+
+[bscscan]
+    api_key = "VV6I9K4T1XBXHEZ187XJI51AR2FTHCJ8VV"
+    url_prefix = "https://api-testnet.bscscan.com/api"
+
+[contract]
+    game_nft_address = "0x9E30e0De5682bced703275fb4dCad78EddCC592D"
+    governance_token_address = "0xe36A654e5B5CC3678f4824a23e7B24e0A3EC6783"
+    game_token_address = "0x32661f9851CC487d91A4Edc2ac421D48B4aEE942"
+    game_vault_address = "0xDd77BBAafc52BDfA84Bb98a095dfb715f8280870"
+    usdc_address = "0x64544969ed7EBf5f083679233325356EbE738930"
+
+[kafka]
+    address = "47.101.206.167:9093"
+
+[redis]
+    address = "r-uf6qwvv3q2ruq3iiyupd.redis.rds.aliyuncs.com:6379"
+    password = "HXLfJQYZTtcZSVu7"
+    #address = "127.0.0.1:6380"
+    #password = ""
+    #machine_id = "3"
+[chain]
+    node_address = "wss://ws-nd-513-001-835.p2pify.com/16ead84fd5bde769914b64a03ecde444"
