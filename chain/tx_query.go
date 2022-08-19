@@ -91,6 +91,8 @@ type Metadata struct {
 	Description string    `json:"description"`
 	Image       string    `json:"image"`
 	ExternalUrl string    `json:"external_url"`
+	Fid         string    `json:"fid"`
+	Mid         string    `json:"mid"`
 	SpikeInfo   SpikeInfo `json:"spike_info"`
 	Attribute   []Attr    `json:"attributes"`
 }
