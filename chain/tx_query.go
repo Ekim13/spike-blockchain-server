@@ -75,6 +75,10 @@ type metadataService struct {
 	Address string `json:"address"`
 }
 
+type tokenUriService struct {
+	TokenId string `json:"tokenId"`
+}
+
 type nftTypeService struct {
 	WalletAddress string `json:"walletAddress" binding:"required"`
 }
@@ -175,6 +179,45 @@ func (bl *BscListener) queryTxStatusByHash(txHash string) serializer.Response {
 	return serializer.Response{
 		Code: code,
 		Data: receipt.Status,
+	}
+}
+
+func (bl *BscListener) QueryNftTokenUri(c *gin.Context) {
+	var service tokenUriService
+
+	if err := c.ShouldBind(&service); err == nil {
+		tokenId, err := strconv.Atoi(service.TokenId)
+		if err != nil {
+			c.JSON(500, err.Error())
+			return
+		}
+		res := bl.queryNftTokenUri(int64(tokenId))
+		c.JSON(200, res)
+	} else {
+		c.JSON(500, err.Error())
+	}
+}
+
+func (bl *BscListener) queryNftTokenUri(tokenId int64) serializer.Response {
+	aunft, err := contract.NewGameNft(common.HexToAddress(config.Cfg.Contract.GameNftAddress), bl.ec)
+	if err != nil {
+		log.Error("new auNft err : ", err)
+		return serializer.Response{
+			Code:  500,
+			Error: err.Error(),
+		}
+	}
+	uri, err := aunft.TokenURI(nil, big.NewInt(tokenId))
+	if err != nil {
+		log.Error("query tokenUri err : ", err)
+		return serializer.Response{
+			Code:  500,
+			Error: err.Error(),
+		}
+	}
+	return serializer.Response{
+		Code: 200,
+		Data: uri,
 	}
 }
 

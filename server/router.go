@@ -41,6 +41,7 @@ func NewRouter(chainApi *chain.BscListener) *gin.Engine {
 			chain.POST("tx/isPending", chainApi.QueryTxIsPendingByHash)
 			chain.POST("tx/status", chainApi.QueryTxStatusByHash)
 			chain.POST("nft/metadata", chainApi.QueryNftMetadata)
+			chain.POST("nft/tokenUri", chainApi.QueryNftTokenUri)
 			chain.POST("nft/type", chainApi.QueryWalletAddrNft)
 			chain.POST("nft/list", chainApi.QueryNftListByType)
 			chain.POST("erc20/price", api.FindERC20TokenPrice)
