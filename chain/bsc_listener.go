@@ -70,9 +70,11 @@ func NewBscListener(speedyNodeAddress string, targetWalletAddr string) (*BscList
 	vaultChan := make(DataChannel, 10)
 	//skkChan := make(DataChannel, 10)
 	sksChan := make(DataChannel, 10)
+	usdcChan := make(DataChannel, 10)
 	aunftChan := make(DataChannel, 10)
 	eb.Subscribe(newBlockTopic, vaultChan)
 	//eb.Subscribe(newBlockTopic, skkChan)
+	eb.Subscribe(newBlockTopic, sksChan)
 	eb.Subscribe(newBlockTopic, sksChan)
 	eb.Subscribe(newBlockTopic, aunftChan)
 
@@ -81,6 +83,7 @@ func NewBscListener(speedyNodeAddress string, targetWalletAddr string) (*BscList
 	l[gameVault] = newGameVaultListener(newGameVaultTarget(targetWalletAddr), config.Cfg.Contract.GameVaultAddress, gameVault, bl.ec, bl.rc, erc20Notify, vaultChan, getABI(GameVaultABI), errorHandle)
 	//l[governanceToken] = newERC20Listener(newSKKTarget(targetWalletAddr), constants.GOVERNANCE_TOKEN_ADDRESS, governanceToken, bl.ec, bl.rc, erc20Notify, skkChan, getABI(GovernanceTokenABI), errorHandle)
 	l[gameToken] = newERC20Listener(newSKSTarget(targetWalletAddr), config.Cfg.Contract.GameTokenAddress, gameToken, bl.ec, bl.rc, erc20Notify, sksChan, getABI(GameTokenABI), errorHandle)
+	l[usdc] = newERC20Listener(newUSDCTarget(targetWalletAddr), config.Cfg.Contract.UsdcAddress, usdc, bl.ec, bl.rc, erc20Notify, usdcChan, getABI(USDCContractABI), errorHandle)
 	l[gameNft] = newAUNFTListener(newAUNFTTarget(targetWalletAddr), config.Cfg.Contract.GameNftAddress, gameNft, bl.ec, bl.rc, erc721Notify, aunftChan, getABI(GameNftABI), errorHandle)
 	bl.l = l
 	spikeTxMgr := newSpikeTxMgr(game.NewKafkaClient(config.Cfg.Kafka.Address), erc20Notify, erc721Notify)

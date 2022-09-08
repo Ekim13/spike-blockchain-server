@@ -63,7 +63,6 @@ func (s *NativeTransactionRecordService) FindNativeTransactionRecord() serialize
 	}
 
 	if len(bscRes.Result) != 0 {
-
 		for i, result := range bscRes.Result {
 			if bscRes.Result[i].Input == "0x" {
 				bnbRecord = append(bnbRecord, bscRes.Result[i])

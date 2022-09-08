@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis"
 	"github.com/go-resty/resty/v2"
 	"github.com/google/uuid"
 	"golang.org/x/xerrors"
+	"math/big"
 	"sort"
 	"spike-blockchain-server/config"
 	"spike-blockchain-server/serializer"
@@ -121,7 +124,6 @@ func (bl *BscListener) GetBlockNum() uint64 {
 
 func queryNativeTxRecord(address string, blockNum uint64) (BscRes, error) {
 	bscRes := BscRes{Result: make([]Result, 0)}
-	bscInternalRes := BscRes{Result: make([]Result, 0)}
 	client := resty.New()
 	resp, err := client.R().
 		SetHeader("Accept", "application/json").
@@ -133,18 +135,6 @@ func queryNativeTxRecord(address string, blockNum uint64) (BscRes, error) {
 	if err != nil {
 		return bscRes, xerrors.New(BscScanRateLimit)
 	}
-
-	resp, err = client.R().
-		SetHeader("Accept", "application/json").
-		Get(getNativeInternalUrl(blockNum, address))
-	if err != nil {
-		return bscRes, err
-	}
-	err = json.Unmarshal(resp.Body(), &bscInternalRes)
-	if err != nil {
-		return bscRes, xerrors.New(BscScanRateLimit)
-	}
-	bscRes.Result = append(bscRes.Result, bscInternalRes.Result...)
 	return bscRes, nil
 }
 
@@ -199,15 +189,40 @@ func (bl *BscListener) FindNativeTransactionRecord(address string) (BscRes, erro
 		bl.rc.Set(address+nativeTxRecordSuffix, string(cacheData), txRecordDuration)
 		return bscRes, nil
 	}
-
-	for i := range bscRes.Result {
+	for i, result := range bscRes.Result {
 		if bscRes.Result[i].Input == "0x" {
 			bnbRecord = append(bnbRecord, bscRes.Result[i])
 			continue
 		}
-		if strings.ToLower(bscRes.Result[i].From) == strings.ToLower(config.Cfg.Contract.GameVaultAddress) {
+		methodId := result.Input[0:10]
+		switch methodId {
+		case hexutil.Encode(GetTxMethodName("swapExactTokensForETHSupportingFeeOnTransferTokens(uint256,uint256,address[],address,uint256)")):
+			height, err := strconv.ParseInt(bscRes.Result[i].BlockNumber, 10, 64)
+			if err != nil {
+				break
+			}
+			query := ethereum.FilterQuery{
+				FromBlock: big.NewInt(height),
+				ToBlock:   big.NewInt(height),
+			}
+			sub, err := bl.ec.FilterLogs(context.Background(), query)
+			if err != nil {
+				break
+			}
+			for _, logEvent := range sub {
+				if logEvent.Topics[0].String() == EventSignHash(WITHRAWALTOPIC) {
+					bscRes.Result[i].Type = "Receive"
+					value := new(big.Int)
+					value.SetString(strings.Split(hexutil.Encode(logEvent.Data), "0x")[1], 16)
+
+					bscRes.Result[i].Value = value.String()
+					bnbRecord = append(bnbRecord, bscRes.Result[i])
+					break
+				}
+			}
+		case hexutil.Encode(GetTxMethodName("swapExactETHForTokens(uint256,address[],address,uint256)")):
+			bscRes.Result[i].Type = "Send"
 			bnbRecord = append(bnbRecord, bscRes.Result[i])
-			continue
 		}
 	}
 	sort.Slice(bnbRecord, func(i, j int) bool {
