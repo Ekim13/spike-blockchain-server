@@ -77,6 +77,7 @@ func NewBscListener(speedyNodeAddress string, targetWalletAddr string) (*BscList
 	eb.Subscribe(newBlockTopic, sksChan)
 	eb.Subscribe(newBlockTopic, sksChan)
 	eb.Subscribe(newBlockTopic, aunftChan)
+	eb.Subscribe(newBlockTopic, usdcChan)
 
 	l := make(map[TokenType]Listener)
 	l[bnb] = newBNBListener(newBNBTarget(targetWalletAddr), bl.ec, bl.rc, erc20Notify, errorHandle)

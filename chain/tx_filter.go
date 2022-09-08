@@ -17,6 +17,7 @@ var shortNames = map[TokenType]string{
 	bnb:             "bnb",
 	gameVault:       "gameVault",
 	gameNft:         "gameNft",
+	usdc:            "usdc",
 }
 
 func (t TokenType) String() string {
