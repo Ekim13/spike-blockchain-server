@@ -15,8 +15,8 @@ type USDCTarget struct {
 	txAddress string
 }
 
-func newUSDCTarget(address string) *SKSTarget {
-	return &SKSTarget{
+func newUSDCTarget(address string) *USDCTarget {
+	return &USDCTarget{
 		txAddress: address,
 	}
 }
