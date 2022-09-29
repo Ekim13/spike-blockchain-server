@@ -11,6 +11,28 @@ import (
 	"strings"
 )
 
+type USDCTarget struct {
+	txAddress string
+}
+
+func newUSDCTarget(address string) *USDCTarget {
+	return &USDCTarget{
+		txAddress: address,
+	}
+}
+
+func (t *USDCTarget) Accept(fromAddr, toAddr string) (bool, uint64) {
+	if strings.ToLower(t.txAddress) == strings.ToLower(toAddr) {
+		return true, USDC_RECHARGE
+	}
+
+	if strings.ToLower(t.txAddress) == strings.ToLower(fromAddr) {
+		return true, USDC_WITHDRAW
+	}
+
+	return false, NOT_EXIST
+}
+
 type SKSTarget struct {
 	txAddress string
 }
