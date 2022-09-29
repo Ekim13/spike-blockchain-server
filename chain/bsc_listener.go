@@ -75,7 +75,6 @@ func NewBscListener(speedyNodeAddress string, targetWalletAddr string) (*BscList
 	eb.Subscribe(newBlockTopic, vaultChan)
 	//eb.Subscribe(newBlockTopic, skkChan)
 	eb.Subscribe(newBlockTopic, sksChan)
-	eb.Subscribe(newBlockTopic, sksChan)
 	eb.Subscribe(newBlockTopic, aunftChan)
 	eb.Subscribe(newBlockTopic, usdcChan)
 
