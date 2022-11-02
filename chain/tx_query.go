@@ -254,19 +254,19 @@ func (bl *BscListener) queryNftMetadata(tokenId int64, address string) serialize
 			Error: err.Error(),
 		}
 	}
-	owner, err := aunft.OwnerOf(nil, big.NewInt(tokenId))
-	if err != nil {
-		return serializer.Response{
-			Code:  500,
-			Error: err.Error(),
-		}
-	}
-	if strings.ToLower(owner.String()) != strings.ToLower(address) {
-		return serializer.Response{
-			Code:  500,
-			Error: xerrors.New("tokenId, nft not match").Error(),
-		}
-	}
+	//owner, err := aunft.OwnerOf(nil, big.NewInt(tokenId))
+	//if err != nil {
+	//	return serializer.Response{
+	//		Code:  500,
+	//		Error: err.Error(),
+	//	}
+	//}
+	//if strings.ToLower(owner.String()) != strings.ToLower(address) {
+	//	return serializer.Response{
+	//		Code:  500,
+	//		Error: xerrors.New("tokenId, nft not match").Error(),
+	//	}
+	//}
 
 	client := resty.New()
 
